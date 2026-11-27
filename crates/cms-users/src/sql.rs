@@ -30,6 +30,31 @@ pub(crate) fn select_row(table: &TableName, id: UserId) -> Sql {
     Sql::new(sql)
 }
 
+/// One row by a text column: `SELECT * … WHERE {column} = '{value}' LIMIT 1`.
+#[must_use]
+pub(crate) fn select_row_by(table: &TableName, column: &[u8], value: &[u8]) -> Sql {
+    let mut sql = Vec::from(b"SELECT * FROM ");
+    sql.extend_from_slice(table.as_bytes());
+    sql.extend_from_slice(b" WHERE ");
+    sql.extend_from_slice(column);
+    sql.extend_from_slice(b" = ");
+    sql.extend(quote(value));
+    sql.extend_from_slice(b" LIMIT 1");
+    Sql::new(sql)
+}
+
+/// The reference's password write: new hash, activation key cleared, `ID` as `%d`.
+#[must_use]
+pub(crate) fn update_password(table: &TableName, id: UserId, hash: &[u8]) -> Sql {
+    let mut sql = Vec::from(b"UPDATE ");
+    sql.extend(tick(table.as_bytes()));
+    sql.extend_from_slice(b" SET `user_pass` = ");
+    sql.extend(quote(hash));
+    sql.extend_from_slice(b", `user_activation_key` = '' WHERE `ID` = ");
+    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
+    Sql::new(sql)
+}
+
 /// Insert one usermeta row: `user_id` `%d`, key and value `%s`.
 #[must_use]
 pub(crate) fn insert_meta(table: &TableName, id: UserId, key: &MetaKey, value: &[u8]) -> Sql {
@@ -155,7 +180,7 @@ fn tick(name: &[u8]) -> Vec<u8> {
 mod tests {
     use super::{
         delete_meta_ids, delete_row, insert_meta, insert_row, select_meta, select_meta_ids,
-        select_row, update_meta, update_row,
+        select_row, select_row_by, update_meta, update_password, update_row,
     };
     use crate::UserId;
     use crate::draft::{Draft, Field};
@@ -243,6 +268,26 @@ mod tests {
             assert_eq!(
                 delete_row(&table, id).as_bytes(),
                 b"DELETE FROM `wp_users` WHERE `ID` = 12"
+            );
+        }
+    }
+
+    #[test]
+    fn login_lookups_and_password_writes_match_the_reference() {
+        let opened = users_table();
+        assert!(opened.is_some());
+        if let Some((table, id)) = opened {
+            assert_eq!(
+                select_row_by(&table, b"user_login", b"o'brien").as_bytes(),
+                br"SELECT * FROM wp_users WHERE user_login = 'o\'brien' LIMIT 1"
+            );
+            assert_eq!(
+                select_row_by(&table, b"user_email", b"ada@example.test").as_bytes(),
+                b"SELECT * FROM wp_users WHERE user_email = 'ada@example.test' LIMIT 1"
+            );
+            assert_eq!(
+                update_password(&table, id, b"$wp$2y$12$x").as_bytes(),
+                b"UPDATE `wp_users` SET `user_pass` = '$wp$2y$12$x', `user_activation_key` = '' WHERE `ID` = 12"
             );
         }
     }

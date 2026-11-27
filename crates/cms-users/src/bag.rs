@@ -9,7 +9,7 @@ use crate::draft::Draft;
 use crate::error::Error;
 use crate::id::UserId;
 use crate::row::{User, from_set};
-use crate::sql::{delete_row, insert_row, select_row, update_row};
+use crate::sql::{delete_row, insert_row, select_row, select_row_by, update_password, update_row};
 use crate::write::Write;
 
 /// Users table stem from `contracts/inventory/tables.jsonl`.
@@ -58,6 +58,49 @@ impl<S: Store> Users<S> {
                     Ok(None)
                 }
             }
+            RowsOrFailed::Failed => Ok(None),
+        }
+    }
+
+    /// Stored row whose `user_login` equals `login`, or `None`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Unavailable`] when the store cannot talk to a server.
+    pub fn by_login(&mut self, login: &[u8]) -> Result<Option<User>, Error> {
+        self.get_by(b"user_login", login)
+    }
+
+    /// Stored row whose `user_email` equals `email`, or `None`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Unavailable`] when the store cannot talk to a server.
+    pub fn by_email(&mut self, email: &[u8]) -> Result<Option<User>, Error> {
+        self.get_by(b"user_email", email)
+    }
+
+    /// Replace the stored password hash and clear the activation key, as the reference's
+    /// password setter does.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Unavailable`] when the store cannot talk to a server.
+    pub fn set_password(&mut self, id: UserId, hash: &[u8]) -> Result<Write, Error> {
+        let reply = self.exec(&update_password(&self.table, id, hash))?;
+        self.hits.remove(&id);
+        match reply {
+            Reply::Done { affected, .. } if affected > 0 => Ok(Write::Replaced),
+            _ => Ok(Write::Unchanged),
+        }
+    }
+
+    // Lookups by a text column fill the id cache, so a later `get` does not re-query.
+    fn get_by(&mut self, column: &[u8], value: &[u8]) -> Result<Option<User>, Error> {
+        match self.query(&select_row_by(&self.table, column, value))? {
+            RowsOrFailed::Rows(set) => Ok(from_set(&set).inspect(|user| {
+                self.hits.insert(user.id(), user.clone());
+            })),
             RowsOrFailed::Failed => Ok(None),
         }
     }
