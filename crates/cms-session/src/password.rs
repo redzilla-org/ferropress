@@ -43,6 +43,24 @@ impl Password {
         self.0.is_empty()
     }
 
+    /// A copy without leading or trailing space, tab, newline, carriage return, NUL or vertical
+    /// tab, the characters the reference strips from a submitted password.
+    #[must_use]
+    pub fn trimmed(&self) -> Self {
+        let strip = |b: &u8| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0 | 0x0b);
+        let start = self
+            .0
+            .iter()
+            .position(|b| !strip(b))
+            .unwrap_or(self.0.len());
+        let end = self
+            .0
+            .iter()
+            .rposition(|b| !strip(b))
+            .map_or(start, |i| i + 1);
+        Self::new(&self.0[start..end])
+    }
+
     fn bytes(&self) -> &[u8] {
         &self.0
     }
@@ -332,5 +350,11 @@ mod tests {
         assert_eq!(format!("{password:?}"), "Password(..)");
         assert!(!password.is_empty());
         assert!(Password::new("").is_empty());
+        assert_eq!(
+            Password::new(" \t\0a b\x0b\r\n").trimmed(),
+            Password::new("a b")
+        );
+        assert!(Password::new(" \n ").trimmed().is_empty());
+        assert_eq!(Password::new("x").trimmed(), Password::new("x"));
     }
 }

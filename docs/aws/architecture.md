@@ -277,6 +277,45 @@ placeholder HTML.
   `auth`, `admin` and `comments`. Nothing secret goes into environment variables, logs or the
   repository. DSQL uses IAM tokens and needs no password.
 - **Capabilities:** `cms-auth` as today, loaded from DSQL usermeta per admin request.
+- **Domain crate:** `cms-session` holds the pure parts. Lambdas wire it to adapters through the
+  `SessionStore` and `RateLimiter` ports. It provides:
+  - hash verification (`verify`, `needs_rehash`, `hash_password`);
+  - the `Login` service (`login`, `resolve`, `logout`, `logout_everywhere`) and `can`;
+  - `fp_session` cookies (`CookiePath`);
+  - nonces (`create_nonce`, `verify_nonce`).
+- **Stored hash formats.** Hashes are checked in the reference's order:
+  - 32 bytes or fewer as MD5 hex;
+  - `$P$`/`$H$` portable iterated MD5;
+  - `$wp` + bcrypt over base64(HMAC-SHA384(password, `wp-sha384`));
+  - plain `$2a$`/`$2b$`/`$2y$` bcrypt.
+
+  Anything else fails, so `$2x$`, `$1$`, `$5$`, `$6$` and argon2 users reset their password. A
+  verified hash is replaced by `$wp$2y$12$…` unless it is already in that form. Cost 12 is the
+  default of the reference runtime, PHP 8.4 and later.
+- **Accepting `$H$`.** The current reference sends only `$P$` to the portable checker. Accepting
+  `$H$` with the same algorithm, as older reference releases did, is a documented leniency.
+- **Login input.** The login name is trimmed and inner whitespace is collapsed. The password is
+  trimmed, as the reference does. The rest of the reference's login-name sanitizing (tag, octet
+  and accent stripping) is not applied, so such inputs fail to match.
+- **Lookup.** A login name that matches no user and contains `@` is tried as an email address.
+- **Lifetimes.** Sessions last 2 days, or 14 days with remember-me, the reference defaults.
+  Remember-me sets `Max-Age` on the cookie; otherwise the cookie lives for the browser session.
+- **Rate limits.** Fixed 5-minute windows, counted before the password check so that a flood
+  cannot buy bcrypt work:
+  - 20 attempts per client address;
+  - 5 per lower-cased login name, keyed by its sha256.
+
+  Keys are `RL#login-ip#<ip>#<window>` and `RL#login-user#<sha256>#<window>`, with TTL at the end
+  of the next window. A limiter outage fails closed.
+- **Nonce semantics.** Ten hex characters, starting 12 from the end, of HMAC-MD5 over
+  `tick|action|uid|token`. The key is the nonce key followed by the nonce salt, and the token is
+  the `fp_session` value. A tick is 12 hours (`ceil(now / 43200)`), and the current and previous
+  ticks are accepted.
+- **Session-token usermeta divergence.** The reference keeps each user's sessions in the
+  `session_tokens` usermeta row (verifier hash to expiration, IP, UA, login time). In the
+  serverless profile sessions live only in the DynamoDB sessions table. That usermeta row is
+  never written, so plugins that read it, or list or destroy sessions through it, see an empty
+  list. ADR-0010 records this as a profile divergence.
 
 ## 8. Migrating the existing data layer
 
