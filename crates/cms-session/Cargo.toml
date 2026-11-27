@@ -1,0 +1,29 @@
+[package]
+name = "cms-session"
+description = "Password hashes, login sessions, rate limits and nonces"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# In-memory port fakes for tests in this and downstream crates.
+test-util = []
+
+[dependencies]
+bcrypt = { workspace = true }
+cms-auth = { workspace = true }
+cms-db = { workspace = true }
+cms-users = { workspace = true }
+getrandom = { workspace = true }
+md-5 = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+cms-db = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
