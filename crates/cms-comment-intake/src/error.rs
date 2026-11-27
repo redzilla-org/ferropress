@@ -16,6 +16,9 @@ pub enum Error {
     /// A value cannot be written as a literal in the store's dialect.
     #[error("comment field cannot be stored: {0}")]
     Literal(#[from] cms_db::LiteralError),
+    /// A table name could not be formed.
+    #[error("comment table name: {0}")]
+    Table(#[from] cms_db::NameError),
     /// A port (rate limiter, session, permalink, nudge) failed.
     #[error("{port} failed: {message}")]
     Port {

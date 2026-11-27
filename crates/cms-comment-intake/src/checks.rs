@@ -20,28 +20,9 @@ pub(crate) fn matches_keys(keys: &str, fields: &[&str]) -> bool {
         })
 }
 
-/// Whether `text` hides a plain-ASCII character (other than `&`) behind a decimal entity,
-/// a trick the reference treats as disallowed.
-#[must_use]
-pub(crate) fn has_encoded_ascii(text: &str) -> bool {
-    let mut rest = text;
-    while let Some(start) = rest.find("&#") {
-        rest = &rest[start + 2..];
-        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
-        if digits > 0 && rest.as_bytes().get(digits) == Some(&b';') {
-            // Long digit runs exceed every ASCII code point.
-            let code = rest[..digits].parse::<u32>().unwrap_or(u32::MAX);
-            if code < 128 && code != 38 {
-                return true;
-            }
-        }
-    }
-    false
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{has_encoded_ascii, link_count, matches_keys};
+    use super::{link_count, matches_keys};
 
     #[test]
     fn links_are_counted_per_double_slash() {
@@ -65,16 +46,5 @@ mod tests {
         assert!(!matches_keys("", &["anything"]));
         assert!(!matches_keys("\n  \n", &["anything"]));
         assert!(!matches_keys("loan", &["hello", "world"]));
-    }
-
-    #[test]
-    fn encoded_ascii_is_found_but_ampersands_and_high_code_points_are_not() {
-        assert!(has_encoded_ascii("v&#105;agra"));
-        assert!(has_encoded_ascii("x &#0; y"));
-        assert!(!has_encoded_ascii("fish &#38; chips"));
-        assert!(!has_encoded_ascii("caf&#233;"));
-        assert!(!has_encoded_ascii("&#99999999999999999999;"));
-        assert!(!has_encoded_ascii("&#; &#12 &#x41;"));
-        assert!(!has_encoded_ascii("plain"));
     }
 }
