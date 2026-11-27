@@ -21,6 +21,14 @@ allow = [
     "GPL-2.0-or-later",
 ]
 confidence-threshold = 0.93
+# Narrow, reviewed exceptions instead of widening `allow` (issue #4 owner decision):
+# ring is "Apache-2.0 AND ISC"; Apache-2.0 is GPLv3-compatible, which GPL-2.0-or-later permits
+# for the combined binary. webpki-roots is the Mozilla CA list under the permissive CDLA-2.0
+# data license. Both are pulled in only by ureq's `rustls` feature for AWS HTTPS.
+exceptions = [
+    { crate = "ring", allow = ["Apache-2.0"] },
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+]
 unused-allowed-license = "allow"
 
 [licenses.private]
