@@ -381,6 +381,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cms-outbox"
+version = "0.0.0"
+dependencies = [
+ "cms-db",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "cms-query"
 version = "0.0.0"
 dependencies = [
