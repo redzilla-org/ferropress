@@ -2,20 +2,28 @@
 
 use std::collections::VecDeque;
 
-use crate::{Reply, Sql, Store, StoreError};
+use crate::{Dialect, Reply, Sql, Store, StoreError};
 
 /// Replies to a fixed list of statements, in order.
 #[derive(Debug)]
 pub struct Scripted {
+    dialect: Dialect,
     remaining: VecDeque<(Sql, Reply)>,
     seen: Vec<Sql>,
 }
 
 impl Scripted {
-    /// A store that answers `steps` in order.
+    /// A `MySql` store that answers `steps` in order.
     #[must_use]
     pub fn new(steps: impl IntoIterator<Item = (Sql, Reply)>) -> Self {
+        Self::with_dialect(Dialect::MySql, steps)
+    }
+
+    /// A store in `dialect` that answers `steps` in order.
+    #[must_use]
+    pub fn with_dialect(dialect: Dialect, steps: impl IntoIterator<Item = (Sql, Reply)>) -> Self {
         Self {
+            dialect,
             remaining: steps.into_iter().collect(),
             seen: Vec::new(),
         }
@@ -35,6 +43,10 @@ impl Scripted {
 }
 
 impl Store for Scripted {
+    fn dialect(&self) -> Dialect {
+        self.dialect
+    }
+
     fn query(&mut self, sql: &Sql) -> Result<Reply, StoreError> {
         let Some((expected, reply)) = self.remaining.pop_front() else {
             return Err(StoreError::Unavailable);
