@@ -15,6 +15,7 @@
 //! # Ok::<(), cms_db::NameError>(())
 //! ```
 
+mod dialect;
 mod error;
 mod names;
 mod reply;
@@ -24,6 +25,7 @@ mod store;
 #[cfg(feature = "test-util")]
 mod scripted;
 
+pub use dialect::{Dialect, LiteralError};
 pub use error::{NameError, StoreError};
 pub use names::{TableName, TablePrefix, TableStem};
 pub use reply::{Cell, Column, Reply, ResultSet, Row, ServerError};
