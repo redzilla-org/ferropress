@@ -1,0 +1,20 @@
+[package]
+name = "lambda-read"
+description = "Tiny read-path Lambda: serves published routes from the read model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Deliberately small: no async runtime, no AWS SDK, no PHP engine. ureq (already admitted for
+# xtask) talks to the local Lambda Runtime API over plain HTTP; serde_json decodes the event.
+[dependencies]
+cms-readmodel = { path = "../../crates/cms-readmodel" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ureq = { workspace = true }
+
+[lints]
+workspace = true
