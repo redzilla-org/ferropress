@@ -1,0 +1,24 @@
+[package]
+name = "cms-authoring"
+description = "Editor workflows for the serverless admin: post list, edit, preview, publish and REST writes through the outbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Orchestration over the domain crates; serde_json carries REST bodies and outbox payloads.
+[dependencies]
+cms-auth = { workspace = true }
+cms-content = { workspace = true }
+cms-db = { workspace = true }
+cms-users = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+cms-db = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

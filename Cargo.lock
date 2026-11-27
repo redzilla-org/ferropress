@@ -320,6 +320,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cms-authoring"
+version = "0.0.0"
+dependencies = [
+ "cms-auth",
+ "cms-content",
+ "cms-db",
+ "cms-users",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "cms-bootstrap"
 version = "0.0.0"
 dependencies = [
