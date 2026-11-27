@@ -30,3 +30,4 @@ Copy [`0000-template.md`](0000-template.md) to `NNNN-short-title.md` with the ne
 | [0007](0007-bytecode-compiler.md) | Bytecode compiler: compiled units, instruction format and the linking boundary | Accepted |
 | [0008](0008-vm-core.md) | VM core: execution model, frames, output and errors | Accepted |
 | [0009](0009-pcre2.md) | PCRE2 for `preg_*` | Accepted |
+| [0010](0010-serverless-storage-profile.md) | Serverless storage profile (Aurora DSQL, DynamoDB, S3) | Proposed |
