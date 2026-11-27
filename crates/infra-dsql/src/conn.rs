@@ -1,4 +1,4 @@
-//! One authenticated PostgreSQL session over any byte stream, speaking the simple Query protocol.
+//! One authenticated `PostgreSQL` session over any byte stream, speaking the simple Query protocol.
 
 use std::io::{Read, Write};
 
@@ -41,7 +41,7 @@ impl Outcome {
     }
 }
 
-/// Transaction state from the last ReadyForQuery.
+/// Transaction state from the last `ReadyForQuery`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TxStatus {
     /// Not in a transaction block.
@@ -104,7 +104,7 @@ impl<S: Read + Write> Connection<S> {
         self.status
     }
 
-    /// Sends `sql` as one simple Query and collects the reply up to ReadyForQuery.
+    /// Sends `sql` as one simple Query and collects the reply up to `ReadyForQuery`.
     ///
     /// When the text holds several statements the last result wins, and any error wins over
     /// results, matching what the server committed or rolled back.

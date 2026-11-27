@@ -13,7 +13,9 @@ test-util = []
 
 [dependencies]
 cms-db = { workspace = true }
+rustls = { workspace = true }
 thiserror = { workspace = true }
+webpki-roots = { workspace = true }
 
 [dev-dependencies]
 cms-db = { workspace = true, features = ["test-util"] }

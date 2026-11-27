@@ -92,7 +92,7 @@ impl fmt::Debug for Token {
     }
 }
 
-/// Issues DSQL auth tokens (`dsql:DbConnect`), e.g. a SigV4 presigner in the binary.
+/// Issues DSQL auth tokens (`dsql:DbConnect`), e.g. a `SigV4` presigner in the binary.
 pub trait TokenSource {
     /// A fresh token for `endpoint`.
     ///

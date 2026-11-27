@@ -6,8 +6,10 @@
 use std::time::Duration;
 
 use cms_db::{Cell, Reply, Sql, Store, store_contract};
-use infra_dsql::fake::{FakeServer, Frames, Greeting, ListedTokens, ManualClock, PlainTcp, Session};
-use infra_dsql::{Dsql, MigrateError, Migration, Retry, TransactionError};
+use infra_dsql::fake::{
+    FakeServer, Frames, Greeting, ListedTokens, ManualClock, PlainTcp, Session, test_roots,
+};
+use infra_dsql::{Connector, Dsql, Endpoint, Error, MigrateError, Migration, Retry, Tls, TransactionError};
 
 const TOKEN_LIFETIME: Duration = Duration::from_secs(15 * 60);
 
@@ -298,6 +300,54 @@ fn closure_errors_failed_blocks_and_commit_errors_roll_back_or_abort() {
     let rows = dsql.with_transaction(|_tx| Ok::<(), ()>(()));
     assert!(matches!(rows, Err(TransactionError::Store(_))));
     assert!(rows.is_err_and(|error| error.to_string().starts_with("transaction lost")));
+}
+
+#[test]
+fn tls_sessions_verify_the_server_and_carry_queries() {
+    let server = FakeServer::start_tls(vec![Session::new(
+        "t",
+        vec![step("SELECT 1", Frames::new().rows(&["n"], &[&[Some("1")]]).complete("SELECT 1").ready(b'I'))],
+    )])
+    .expect("fake server binds");
+    let tls = Tls::with_roots(test_roots().expect("test roots load")).expect("tls config");
+    let tokens = ListedTokens::new(&["t"], TOKEN_LIFETIME);
+    let mut dsql = Dsql::new(server.endpoint(), tls, tokens);
+    let reply = dsql.query(&Sql::from("SELECT 1")).expect("query over tls");
+    assert_eq!(reply.as_rows().map(|set| set.rows().len()), Some(1));
+    let seen = server.seen();
+    assert_eq!(seen.ssl_requests, 1);
+    assert_eq!(seen.logins[0].2, "t");
+}
+
+#[test]
+fn tls_refusals_untrusted_servers_and_odd_answers_fail_the_connect() {
+    let plain = FakeServer::start(vec![Session::new("t", vec![])]).expect("fake server binds");
+    let tls = Tls::with_roots(test_roots().expect("test roots load")).expect("tls config");
+    assert!(matches!(tls.connect(&plain.endpoint()), Err(Error::TlsRefused)));
+
+    let untrusted = FakeServer::start_tls(vec![Session::new("t", vec![])]).expect("fake server binds");
+    let public_roots = Tls::new().expect("tls config");
+    assert!(format!("{public_roots:?}").starts_with("Tls"));
+    assert!(matches!(public_roots.connect(&untrusted.endpoint()), Err(Error::Tls(_))));
+
+    assert!(matches!(
+        tls.connect(&Endpoint::new("bad host name", 1, "app", "postgres")),
+        Err(Error::Tls(_))
+    ));
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut request = [0_u8; 8];
+            let _read = std::io::Read::read_exact(&mut stream, &mut request);
+            let _wrote = std::io::Write::write_all(&mut stream, b"X");
+        }
+    });
+    assert!(matches!(
+        tls.connect(&Endpoint::new("127.0.0.1", port, "app", "postgres")),
+        Err(Error::Protocol(_))
+    ));
 }
 
 fn core() -> Vec<Migration> {

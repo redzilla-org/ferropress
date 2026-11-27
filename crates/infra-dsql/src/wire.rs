@@ -1,4 +1,4 @@
-//! PostgreSQL v3 frontend/backend message framing (protocol version 3.0).
+//! `PostgreSQL` v3 frontend/backend message framing (protocol version 3.0).
 
 use std::io::{Read, Write};
 
@@ -19,7 +19,7 @@ pub(crate) struct Message {
     pub(crate) body: Vec<u8>,
 }
 
-/// Writes the untyped SSLRequest packet.
+/// Writes the untyped `SSLRequest` packet.
 pub(crate) fn write_ssl_request(out: &mut impl Write) -> Result<(), Error> {
     let mut packet = Vec::with_capacity(8);
     packet.extend_from_slice(&8_i32.to_be_bytes());
@@ -29,7 +29,7 @@ pub(crate) fn write_ssl_request(out: &mut impl Write) -> Result<(), Error> {
     Ok(())
 }
 
-/// Writes the untyped StartupMessage naming the role and database.
+/// Writes the untyped `StartupMessage` naming the role and database.
 pub(crate) fn write_startup(out: &mut impl Write, user: &str, database: &str) -> Result<(), Error> {
     let mut body = Vec::with_capacity(32 + user.len() + database.len());
     body.extend_from_slice(&PROTOCOL_3_0.to_be_bytes());
@@ -110,11 +110,6 @@ impl<'a> Body<'a> {
     /// A cursor at the start of `body`.
     pub(crate) const fn new(body: &'a [u8]) -> Self {
         Self { rest: body }
-    }
-
-    /// Whether every byte has been consumed.
-    pub(crate) const fn is_empty(&self) -> bool {
-        self.rest.is_empty()
     }
 
     /// The next `n` bytes.
@@ -228,7 +223,6 @@ mod tests {
         assert_eq!(body.byte().ok(), Some(1));
         assert_eq!(body.i16().ok(), Some(2));
         assert_eq!(body.i32().ok(), Some(3));
-        assert!(body.is_empty());
         assert!(matches!(body.byte(), Err(Error::Protocol(_))));
         assert!(matches!(
             Body::new(b"no-nul").cstr(),

@@ -25,7 +25,7 @@ const REFERENCE_CODES: &[(&[u8; 5], u16)] = &[
     (b"OC001", 1213), // DSQL optimistic concurrency conflict on schema
 ];
 
-/// The first SQLSTATE that maps to `code`, `XX000` (internal_error) for none; the fake server
+/// The first SQLSTATE that maps to `code`, `XX000` (`internal_error`) for none; the fake server
 /// uses it to send port-level scripts as a DSQL server would.
 #[cfg(feature = "test-util")]
 pub(crate) fn state_for_code(code: u16) -> [u8; 5] {
@@ -54,20 +54,20 @@ impl SqlState {
 
     /// Whether rerunning the whole transaction can succeed: `40001` or DSQL's `OC000`/`OC001`.
     #[must_use]
-    pub fn is_conflict(&self) -> bool {
+    pub fn is_conflict(self) -> bool {
         matches!(&self.0, b"40001" | b"OC000" | b"OC001")
     }
 
     /// Whether the server rejected the credentials, which for DSQL means the token expired or
     /// was signed for another role or host.
     #[must_use]
-    pub fn is_auth_failure(&self) -> bool {
+    pub fn is_auth_failure(self) -> bool {
         matches!(&self.0, b"28000" | b"28P01")
     }
 
     /// The reference server's code with the same meaning, or `1105` when there is none.
     #[must_use]
-    pub fn reference_code(&self) -> u16 {
+    pub fn reference_code(self) -> u16 {
         REFERENCE_CODES
             .iter()
             .find(|(state, _)| **state == self.0)

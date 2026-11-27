@@ -1,6 +1,6 @@
 //! Aurora DSQL adapter for the [`cms_db::Store`] port (serverless profile).
 //!
-//! Speaks the PostgreSQL v3 wire protocol directly over any blocking byte stream: startup,
+//! Speaks the `PostgreSQL` v3 wire protocol directly over any blocking byte stream: startup,
 //! cleartext-password auth (DSQL takes the IAM token as the password, over TLS), and the simple
 //! Query protocol, since statements arrive fully rendered by [`cms_db::Dialect::Postgres`].
 //! Replies keep the port's shape: text cells, affected rows from the command tag, the insert id
@@ -30,6 +30,7 @@ mod migrate;
 mod ports;
 mod session;
 mod sqlstate;
+mod tls;
 mod transaction;
 mod wire;
 
@@ -41,4 +42,5 @@ pub use migrate::{Applied, MigrateError, Migration};
 pub use ports::{Clock, Connector, Endpoint, SystemClock, Token, TokenSource};
 pub use session::{DEFAULT_MAX_AGE, Dsql, Retry};
 pub use sqlstate::{PgError, SqlState};
+pub use tls::Tls;
 pub use transaction::{Transaction, TransactionError};
