@@ -19,13 +19,17 @@ cms-content = { path = "crates/cms-content" }
 cms-db = { path = "crates/cms-db" }
 cms-options = { path = "crates/cms-options" }
 cms-query = { path = "crates/cms-query" }
+cms-session = { path = "crates/cms-session" }
 cms-taxonomy = { path = "crates/cms-taxonomy" }
 cms-users = { path = "crates/cms-users" }
 infra-mysql = { path = "crates/infra-mysql" }
 mysql = { version = "28.0.4", default-features = false, features = ["minimal-rust", "buffer-pool"] }
 anyhow = "1.0.104"
+bcrypt = { version = "0.19.3", default-features = false, features = ["alloc"] }
 cargo_metadata = "0.23.1"
 clap = { version = "4.6.7", features = ["derive"] }
+getrandom = { version = "0.4.3", default-features = false }
+md-5 = { version = "0.11.0", default-features = false }
 pcre2 = "0.2.11"
 proptest = "1.12.0"
 serde = { version = "1.0.229", features = ["derive"] }
