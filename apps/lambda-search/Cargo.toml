@@ -1,0 +1,22 @@
+[package]
+name = "lambda-search"
+description = "Search Lambda: answers search pages and REST search from the prebuilt index"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Same shape as the read Lambda: blocking Runtime API loop over ureq, no async runtime, no AWS SDK.
+# cms-query supplies the reference's `s` length cap.
+[dependencies]
+cms-query = { workspace = true }
+cms-readmodel = { path = "../../crates/cms-readmodel" }
+cms-search = { path = "../../crates/cms-search" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ureq = { workspace = true }
+
+[lints]
+workspace = true

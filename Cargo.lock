@@ -892,6 +892,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lambda-search"
+version = "0.0.0"
+dependencies = [
+ "cms-query",
+ "cms-readmodel",
+ "cms-search",
+ "serde_json",
+ "thiserror",
+ "ureq",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
