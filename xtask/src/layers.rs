@@ -23,7 +23,13 @@ pub(crate) enum Layer {
     Binary,
 }
 
-const FOUNDATION_CRATES: &[&str] = &["cms-types", "php-value", "php-serialize", "cms-contracts"];
+const FOUNDATION_CRATES: &[&str] = &[
+    "cms-types",
+    "php-value",
+    "php-serialize",
+    "cms-contracts",
+    "cms-telemetry",
+];
 const ORCHESTRATION_CRATES: &[&str] = &["cms-request", "cms-bootstrap"];
 const BINDINGS_CRATES: &[&str] = &["php-bindings"];
 const TEST_SUPPORT_CRATES: &[&str] = &["test-harness"];
@@ -234,6 +240,7 @@ mod tests {
             ("php-value", Foundation),
             ("php-serialize", Foundation),
             ("cms-contracts", Foundation),
+            ("cms-telemetry", Foundation),
             ("cms-request", Orchestration),
             ("cms-bootstrap", Orchestration),
             ("php-bindings", PhpBindings),

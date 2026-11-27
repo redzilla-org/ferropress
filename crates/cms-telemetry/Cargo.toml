@@ -1,0 +1,16 @@
+[package]
+name = "cms-telemetry"
+description = "Redacted JSON log lines, CloudWatch EMF metric lines and route classes for the serverless profile"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Foundation crate linked into every Lambda: serde_json only, no async, no logging framework.
+[dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
