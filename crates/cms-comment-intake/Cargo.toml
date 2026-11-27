@@ -1,0 +1,21 @@
+[package]
+name = "cms-comment-intake"
+description = "Accept or reject a public comment submission and persist it with an outbox row"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# sha2 (already admitted) keys the commenter cookie names and the moderation hash.
+[dependencies]
+cms-db = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+cms-db = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
