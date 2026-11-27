@@ -243,6 +243,7 @@ mod tests {
             ("cms-hooks", Domain),
             ("cms-db", Domain),
             ("infra-mysql", Infrastructure),
+            ("infra-dsql", Infrastructure),
             ("platform-server", Platform),
         ];
         for (name, expected) in cases {

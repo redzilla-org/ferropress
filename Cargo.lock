@@ -813,6 +813,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "infra-dsql"
+version = "0.0.0"
+dependencies = [
+ "cms-db",
+ "thiserror",
+]
+
+[[package]]
 name = "infra-mysql"
 version = "0.0.0"
 dependencies = [
