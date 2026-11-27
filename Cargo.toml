@@ -17,6 +17,7 @@ cms-cache = { path = "crates/cms-cache" }
 cms-comments = { path = "crates/cms-comments" }
 cms-content = { path = "crates/cms-content" }
 cms-db = { path = "crates/cms-db" }
+cms-import = { path = "crates/cms-import" }
 cms-options = { path = "crates/cms-options" }
 cms-query = { path = "crates/cms-query" }
 cms-taxonomy = { path = "crates/cms-taxonomy" }
