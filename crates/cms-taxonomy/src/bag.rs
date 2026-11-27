@@ -141,7 +141,11 @@ impl<S: Store> Terms<S> {
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn delete(&mut self, id: TermId, taxonomy_id: TermTaxonomyId) -> Result<Write, Error> {
         let dialect = self.store.dialect();
-        let taxonomy = self.exec(&delete_taxonomy(dialect, &self.taxonomy_table, taxonomy_id)?)?;
+        let taxonomy = self.exec(&delete_taxonomy(
+            dialect,
+            &self.taxonomy_table,
+            taxonomy_id,
+        )?)?;
         self.hits.remove(&id);
         let leftover = match self.query(&count_taxonomies(dialect, &self.taxonomy_table, id)?)? {
             RowsOrFailed::Rows(set) => leftover_count(&set),

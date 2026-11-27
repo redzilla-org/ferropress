@@ -203,10 +203,7 @@ mod tests {
         assert_eq!(returned_id(&set(vec![])), 0);
         assert_eq!(returned_id(&set(vec![Row::new(vec![Cell::Null])])), 0);
         assert_eq!(returned_id(&set(vec![Row::new(vec![])])), 0);
-        assert_eq!(
-            returned_id(&set(vec![Row::new(vec![Cell::bytes("x")])])),
-            0
-        );
+        assert_eq!(returned_id(&set(vec![Row::new(vec![Cell::bytes("x")])])), 0);
         assert_eq!(
             returned_id(&set(vec![Row::new(vec![Cell::bytes([0xff])])])),
             0

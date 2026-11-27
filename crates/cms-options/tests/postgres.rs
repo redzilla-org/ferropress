@@ -32,7 +32,10 @@ fn postgres_add_looks_up_case_insensitively_then_upserts() {
         autoloaded(),
         (
             miss,
-            Reply::Rows(ResultSet::new([Column::new("option_value")], Vec::<Row>::new())),
+            Reply::Rows(ResultSet::new(
+                [Column::new("option_value")],
+                Vec::<Row>::new(),
+            )),
         ),
         (
             insert,
