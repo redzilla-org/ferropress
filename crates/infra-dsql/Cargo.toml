@@ -1,0 +1,26 @@
+[package]
+name = "infra-dsql"
+description = "Aurora DSQL adapter for the cms-db SQL store port over the PostgreSQL wire protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+test-util = []
+
+[dependencies]
+cms-db = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+cms-db = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
+
+[[test]]
+name = "store"
+required-features = ["test-util"]
