@@ -153,6 +153,12 @@ pub trait Repo {
     ///
     /// [`Error`] when the store fails.
     fn outbox(&mut self, event: &OutboxEvent) -> Result<(), Error>;
+    /// A user's `display_name` and `user_nicename`, for bylines.
+    ///
+    /// # Errors
+    ///
+    /// [`Error`] when the store fails.
+    fn author(&mut self, id: u64) -> Result<Option<(String, String)>, Error>;
 }
 
 /// Post columns the admin reads, in select order.
@@ -716,6 +722,26 @@ impl Repo for SqlRepo<'_> {
             .literal(&event.payload)
             .raw(")");
         self.done(sql).map(|_done| ())
+    }
+
+    fn author(&mut self, id: u64) -> Result<Option<(String, String)>, Error> {
+        let mut sql = self.statement();
+        sql.raw("SELECT ")
+            .ident("display_name")
+            .raw(", ")
+            .ident("user_nicename")
+            .raw(" FROM ")
+            .ident(self.table("users"))
+            .raw(" WHERE ")
+            .ident("ID")
+            .raw(" = ")
+            .number(id)
+            .raw(" LIMIT 1");
+        let set = self.rows(sql)?;
+        Ok(set.rows().first().map(|row| {
+            let get = named(&set, row);
+            (get("display_name"), get("user_nicename"))
+        }))
     }
 }
 

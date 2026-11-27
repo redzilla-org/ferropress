@@ -326,6 +326,8 @@ dependencies = [
  "cms-auth",
  "cms-content",
  "cms-db",
+ "cms-readmodel",
+ "cms-render",
  "cms-users",
  "serde_json",
  "thiserror",
