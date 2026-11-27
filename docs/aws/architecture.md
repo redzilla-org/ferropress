@@ -363,24 +363,25 @@ owner-authorized step and outside this work.
 
 ## 13. Phases
 
-Each phase is one tracked issue and reaches the repository quality gate before it closes.
+Each phase is one tracked issue and reaches the repository quality gate before it closes. Work
+lands on the `lambda-port` branch.
 
-1. **Data-access abstraction and DSQL schema:** `cms_db::Dialect`, dialect-aware builders in every
-   `sql.rs`, `deploy/aws/dsql/0001-core.sql`, ADR-0010.
-2. **Tiny read Lambda skeleton:** `cms-readmodel` (route keys, route items, response assembly behind
-   `RouteTable` and `Blobs` ports) and `apps/lambda-read` (Runtime API loop).
-3. **AWS adapters:** `infra-aws` (SigV4, DynamoDB `GetItem`/`PutItem`/`Query`, S3, CloudFront
-   invalidation). An HTTPS client dependency is needed and is a dependency-admission review.
-4. **`infra-dsql` store adapter:** PostgreSQL wire protocol, IAM tokens, OCC retry, migration
-   runner.
-5. **Outbox and projector job:** feeds, sitemaps, redirects and post docs first, HTML pages when the
-   renderer exists. Evaluates DSQL CDC.
-6. **CDK IaC:** Data, Compute and Edge stacks; synthesizes only, with no deploy.
-7. **Auth and sessions Lambda.**
-8. **Admin and editor Lambda:** depends on roadmap Phase 7.
-9. **Media upload and processing.**
-10. **Comments and forms with rate limits.**
-11. **Search Lambda and prebuilt index.**
-12. **WXR import job.**
-13. **Observability, cost guardrails and measured traffic.**
-14. **Edge mount and cutover runbook:** path prefix or subdomain.
+- [ ] #2 Phase 1: **data-access abstraction and DSQL schema.** `cms_db::Dialect`, dialect-aware
+  builders in every `sql.rs`, `deploy/aws/dsql/0001-core.sql`, ADR-0010.
+- [ ] #3 Phase 2: **tiny read Lambda skeleton.** `cms-readmodel` (route keys, route items, response
+  assembly behind `RouteTable` and `Blobs` ports) and `apps/lambda-read` (Runtime API loop).
+- [ ] #4 Phase 3: **AWS adapters.** `infra-aws` (SigV4, DynamoDB, S3, CloudFront invalidation). It
+  needs an HTTPS client dependency, which is a dependency-admission review.
+- [ ] #5 Phase 4: **`infra-dsql` store adapter.** PostgreSQL wire protocol, IAM tokens, OCC retry,
+  migration runner.
+- [ ] #6 Phase 5: **outbox and projector job.** Feeds, sitemaps, redirects and post docs first, HTML
+  pages when the renderer exists. Evaluates DSQL CDC.
+- [ ] #7 Phase 6: **CDK IaC.** Data, Compute and Edge stacks; synthesizes only, with no deploy.
+- [ ] #8 Phase 7: **auth and sessions Lambda.**
+- [ ] #9 Phase 8: **admin and editor Lambda.** Depends on roadmap Phase 7.
+- [ ] #10 Phase 9: **media upload and processing.**
+- [ ] #11 Phase 10: **comments and forms with rate limits.**
+- [ ] #12 Phase 11: **search Lambda and prebuilt index.**
+- [ ] #13 Phase 12: **WXR import job.**
+- [ ] #14 Phase 13: **observability, cost guardrails and measured traffic.**
+- [ ] #15 Phase 14: **edge mount and cutover runbook,** for a path prefix or a subdomain.
