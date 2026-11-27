@@ -3,7 +3,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use cms_db::{Column, Reply, ResultSet, Row, Sql, Store, StoreError};
+use cms_db::{Column, Dialect, Reply, ResultSet, Row, Sql, Store, StoreError};
 use mysql::prelude::Queryable;
 use mysql::{Conn, OptsBuilder};
 
@@ -80,6 +80,10 @@ impl Mysql {
 }
 
 impl Store for Mysql {
+    fn dialect(&self) -> Dialect {
+        Dialect::MySql
+    }
+
     fn query(&mut self, sql: &Sql) -> Result<Reply, StoreError> {
         Mysql::query(self, sql).map_err(StoreError::from)
     }

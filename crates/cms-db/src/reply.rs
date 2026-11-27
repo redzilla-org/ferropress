@@ -141,6 +141,18 @@ impl Reply {
         Self::Rows(ResultSet::new(vec![Column::new(name)], rows))
     }
 
+    /// The write acknowledgement for an `INSERT … RETURNING` (see
+    /// [`crate::Statement::returning`]): `affected` rows, with the id from the first cell of
+    /// `returned` (`0` when absent), so repositories read `insert_id` the same way on every
+    /// dialect.
+    #[must_use]
+    pub fn returned(affected: u64, returned: &ResultSet) -> Self {
+        Self::Done {
+            affected,
+            insert_id: crate::statement::returned_id(returned),
+        }
+    }
+
     /// The result set when this is [`Self::Rows`].
     #[must_use]
     pub const fn as_rows(&self) -> Option<&ResultSet> {
@@ -192,6 +204,12 @@ mod tests {
         };
         assert_eq!(done.as_done(), Some((2, 9)));
         assert!(done.as_rows().is_none());
+
+        let id = super::ResultSet::new(
+            vec![super::Column::new("ID")],
+            vec![super::Row::new(vec![Cell::bytes("7")])],
+        );
+        assert_eq!(Reply::returned(1, &id).as_done(), Some((1, 7)));
 
         let failed = Reply::Failed(ServerError::new(1146, "table missing"));
         assert!(failed.as_failed().is_some());
