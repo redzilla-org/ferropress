@@ -21,6 +21,9 @@ pub enum Error {
     /// The site prefix could not form the comments table name.
     #[error(transparent)]
     Table(#[from] TableNameError),
+    /// A value cannot be written in the store's dialect (a NUL byte on `PostgreSQL`).
+    #[error(transparent)]
+    Literal(#[from] cms_db::LiteralError),
 }
 
 impl Error {

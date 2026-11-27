@@ -52,7 +52,8 @@ impl<S: Store> Posts<S> {
         if let Some(post) = self.hits.get(&id) {
             return Ok(Some(post.clone()));
         }
-        match self.query(&select_row(&self.table, id))? {
+        let sql = select_row(self.store.dialect(), &self.table, id)?;
+        match self.query(&sql)? {
             RowsOrFailed::Rows(set) => {
                 if let Some(post) = from_set(&set) {
                     self.hits.insert(id, post.clone());
@@ -73,7 +74,8 @@ impl<S: Store> Posts<S> {
     pub fn by_path(&mut self, path: &[u8]) -> Result<Option<Post>, Error> {
         let parts = path_parts(path);
         let types: &[&[u8]] = &[b"page", b"attachment"];
-        match self.query(&select_path(&self.table, &parts, types))? {
+        let sql = select_path(self.store.dialect(), &self.table, &parts, types)?;
+        match self.query(&sql)? {
             RowsOrFailed::Rows(set) => {
                 let hits = PathHit::from_set(&set);
                 let Some(id) = walk(&parts, &hits, b"page") else {
@@ -92,7 +94,8 @@ impl<S: Store> Posts<S> {
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn by_name(&mut self, name: &[u8]) -> Result<Option<Post>, Error> {
         let slug = sanitize_title_for_query(name);
-        match self.query(&select_name(&self.table, &slug))? {
+        let sql = select_name(self.store.dialect(), &self.table, &slug)?;
+        match self.query(&sql)? {
             RowsOrFailed::Rows(set) => {
                 if let Some(post) = from_set(&set) {
                     self.hits.insert(post.id(), post.clone());
@@ -111,7 +114,8 @@ impl<S: Store> Posts<S> {
     ///
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn insert(&mut self, draft: &Draft) -> Result<Write, Error> {
-        match self.exec(&insert_row(&self.table, draft))? {
+        let sql = insert_row(self.store.dialect(), &self.table, draft)?;
+        match self.exec(&sql)? {
             Reply::Done { insert_id, .. } => match PostId::new(insert_id) {
                 Ok(id) => Ok(Write::Inserted(id)),
                 Err(_) => Ok(Write::Unchanged),
@@ -126,7 +130,8 @@ impl<S: Store> Posts<S> {
     ///
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn update(&mut self, id: PostId, draft: &Draft) -> Result<Write, Error> {
-        let reply = self.exec(&update_row(&self.table, id, draft))?;
+        let sql = update_row(self.store.dialect(), &self.table, id, draft)?;
+        let reply = self.exec(&sql)?;
         self.hits.remove(&id);
         match reply {
             Reply::Done { affected, .. } if affected > 0 => Ok(Write::Replaced),
@@ -140,7 +145,8 @@ impl<S: Store> Posts<S> {
     ///
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn delete(&mut self, id: PostId) -> Result<Write, Error> {
-        let reply = self.exec(&delete_row(&self.table, id))?;
+        let sql = delete_row(self.store.dialect(), &self.table, id)?;
+        let reply = self.exec(&sql)?;
         self.hits.remove(&id);
         match reply {
             Reply::Done { affected, .. } if affected > 0 => Ok(Write::Removed),
