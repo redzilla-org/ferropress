@@ -1,0 +1,17 @@
+[package]
+name = "traffic-share"
+description = "Turns CloudFront standard logs into the route-share table of the serverless architecture"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Offline operator tool: reads already-downloaded log files, no network, no AWS SDK.
+[dependencies]
+cms-telemetry = { path = "../../crates/cms-telemetry" }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
