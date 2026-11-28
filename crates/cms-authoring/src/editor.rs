@@ -364,7 +364,8 @@ impl<'a> Editor<'a> {
         before: &PostRow,
         row: &PostWrite,
     ) -> Result<(), Error> {
-        if before.name == row.name || row.status != Status::Publish {
+        // Only a slug that was public can have links pointing at it.
+        if before.name == row.name || row.status != Status::Publish || !before.is_published() {
             return Ok(());
         }
         let old = self.repo.meta(id, "_wp_old_slug")?;

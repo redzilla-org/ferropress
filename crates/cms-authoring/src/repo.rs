@@ -180,7 +180,7 @@ const POST_COLUMNS: [&str; 12] = [
 /// [`Repo`] over one store connection, spelled in the store's dialect.
 pub struct SqlRepo<'a> {
     store: &'a mut dyn Store,
-    prefix: Box<[u8]>,
+    prefix: cms_db::TablePrefix,
 }
 
 impl<'a> SqlRepo<'a> {
@@ -188,7 +188,7 @@ impl<'a> SqlRepo<'a> {
     pub fn new(store: &'a mut dyn Store, prefix: &cms_db::TablePrefix) -> Self {
         Self {
             store,
-            prefix: prefix.as_bytes().into(),
+            prefix: prefix.clone(),
         }
     }
 
@@ -197,7 +197,7 @@ impl<'a> SqlRepo<'a> {
     }
 
     fn table(&self, stem: &str) -> Vec<u8> {
-        let mut name = self.prefix.to_vec();
+        let mut name = self.prefix.as_bytes().to_vec();
         name.extend_from_slice(stem.as_bytes());
         name
     }
@@ -700,28 +700,15 @@ impl Repo for SqlRepo<'_> {
             .map(text))
     }
 
+    // The shared writer owns the row's shape, so the projector can always parse what the admin
+    // writes; it runs on this connection, inside the caller's open transaction.
     fn outbox(&mut self, event: &OutboxEvent) -> Result<(), Error> {
-        let mut sql = self.statement();
-        sql.raw("INSERT INTO ")
-            .ident(self.table("outbox"))
-            .raw(" (")
-            .ident("aggregate")
-            .raw(", ")
-            .ident("aggregate_id")
-            .raw(", ")
-            .ident("change")
-            .raw(", ")
-            .ident("payload")
-            .raw(") VALUES (")
-            .literal("post")
-            .raw(", ")
-            .number(event.post.as_u64())
-            .raw(", ")
-            .literal(event.change.as_str())
-            .raw(", ")
-            .literal(&event.payload)
-            .raw(")");
-        self.done(sql).map(|_done| ())
+        cms_outbox::write(&mut Through(&mut *self.store), &self.prefix, &event.to_event()).map_err(
+            |error| match error {
+                cms_outbox::OutboxError::Store(_) => Error::Unavailable,
+                other => Error::Rejected(other.to_string().into()),
+            },
+        )
     }
 
     fn author(&mut self, id: u64) -> Result<Option<(String, String)>, Error> {
@@ -748,8 +735,21 @@ impl Repo for SqlRepo<'_> {
 impl fmt::Debug for SqlRepo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SqlRepo")
-            .field("prefix", &String::from_utf8_lossy(&self.prefix))
+            .field("prefix", &String::from_utf8_lossy(self.prefix.as_bytes()))
             .finish_non_exhaustive()
+    }
+}
+
+// `cms_outbox::write` takes a sized store; this forwards to the repo's borrowed connection.
+struct Through<'s>(&'s mut dyn Store);
+
+impl Store for Through<'_> {
+    fn dialect(&self) -> cms_db::Dialect {
+        self.0.dialect()
+    }
+
+    fn query(&mut self, sql: &Sql) -> Result<Reply, cms_db::StoreError> {
+        self.0.query(sql)
     }
 }
 

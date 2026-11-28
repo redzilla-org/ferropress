@@ -171,20 +171,20 @@ impl Change {
     }
 }
 
-/// One `fp_outbox` row.
+/// One `fp_outbox` row for a post write.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutboxEvent {
     /// `aggregate_id`: the post id.
     pub post: PostId,
-    /// `change`.
+    /// What the editor did, carried in the payload as `action`.
     pub change: Change,
-    /// `payload` JSON text.
-    pub payload: String,
+    /// The payload object.
+    pub payload: serde_json::Map<String, serde_json::Value>,
 }
 
 impl OutboxEvent {
-    /// The event for a committed post write. The payload names the slugs the projector must
-    /// re-render or redirect: the current one and, when it changed, the previous one.
+    /// The event for a committed post write. The payload names the action and the slugs the
+    /// projector must re-render or redirect: the current one and the previous one.
     #[must_use]
     pub fn post(
         post: PostId,
@@ -192,19 +192,35 @@ impl OutboxEvent {
         after: &PostWrite,
         before: Option<&PostRow>,
     ) -> Self {
-        let payload = serde_json::json!({
-            "id": post.as_u64(),
-            "type": "post",
-            "status": after.status.as_str(),
-            "slug": after.name,
-            "previous_status": before.map(|row| row.status.as_str()),
-            "previous_slug": before.map(|row| row.name.as_str()),
-        });
+        use serde_json::json;
+        let mut payload = serde_json::Map::new();
+        for (key, value) in [
+            ("id", json!(post.as_u64())),
+            ("type", json!("post")),
+            ("action", json!(change.as_str())),
+            ("status", json!(after.status.as_str())),
+            ("slug", json!(after.name)),
+            ("old_status", json!(before.map(|row| row.status.as_str()))),
+            ("old_slug", json!(before.map(|row| row.name.as_str()))),
+        ] {
+            payload.insert(key.to_owned(), value);
+        }
         Self {
             post,
             change,
-            payload: payload.to_string(),
+            payload,
         }
+    }
+
+    /// The shared outbox event the projector drains (`cms-outbox`). Every post write is a
+    /// `saved` change on the `post` aggregate: the projector re-renders from current DSQL state
+    /// and reads old permalinks from its previous post doc, so the editor's finer action rides
+    /// in the payload only.
+    #[must_use]
+    pub fn to_event(&self) -> cms_outbox::Event {
+        let id = i64::try_from(self.post.as_u64()).unwrap_or(i64::MAX);
+        cms_outbox::Event::new(cms_outbox::Aggregate::Post, id, cms_outbox::Change::Saved)
+            .with_payload(self.payload.clone())
     }
 }
 
@@ -306,11 +322,15 @@ mod tests {
             let event = OutboxEvent::post(id, Change::Published, &after, Some(&before));
             assert_eq!(event.change, Change::Published);
             assert_eq!(
-                event.payload,
-                r#"{"id":5,"previous_slug":"old","previous_status":"draft","slug":"new","status":"publish","type":"post"}"#
+                serde_json::Value::Object(event.payload.clone()).to_string(),
+                r#"{"action":"published","id":5,"old_slug":"old","old_status":"draft","slug":"new","status":"publish","type":"post"}"#
             );
+            let shared = event.to_event();
+            assert_eq!(shared.aggregate(), cms_outbox::Aggregate::Post);
+            assert_eq!(shared.aggregate_id(), 5);
+            assert_eq!(shared.change(), cms_outbox::Change::Saved);
             let fresh = OutboxEvent::post(id, Change::Created, &after, None);
-            assert!(fresh.payload.contains(r#""previous_slug":null"#));
+            assert_eq!(fresh.payload.get("old_slug"), Some(&serde_json::Value::Null));
         }
     }
 }

@@ -13,6 +13,7 @@ repository.workspace = true
 cms-auth = { workspace = true }
 cms-content = { workspace = true }
 cms-db = { workspace = true }
+cms-outbox = { workspace = true }
 cms-readmodel = { path = "../cms-readmodel" }
 cms-render = { path = "../cms-render" }
 cms-users = { workspace = true }

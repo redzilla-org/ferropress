@@ -1,0 +1,26 @@
+[package]
+name = "lambda-admin"
+description = "Admin and editor Lambda: native editor, previews and REST writes through the outbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Same shape as lambda-read: blocking ureq against the local Runtime API, no async runtime and
+# no AWS SDK. The workflows are cms-authoring over ports; serde_json maps the events.
+[dependencies]
+cms-authoring = { path = "../../crates/cms-authoring" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ureq = { workspace = true }
+
+# The end-to-end test drives one invocation through the router with in-memory ports.
+[dev-dependencies]
+cms-content = { workspace = true }
+cms-render = { path = "../../crates/cms-render" }
+cms-users = { workspace = true }
+
+[lints]
+workspace = true
