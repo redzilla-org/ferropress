@@ -18,6 +18,7 @@ cms-comments = { path = "crates/cms-comments" }
 cms-content = { path = "crates/cms-content" }
 cms-db = { path = "crates/cms-db" }
 cms-options = { path = "crates/cms-options" }
+cms-outbox = { path = "crates/cms-outbox" }
 cms-query = { path = "crates/cms-query" }
 cms-taxonomy = { path = "crates/cms-taxonomy" }
 cms-users = { path = "crates/cms-users" }
@@ -30,13 +31,18 @@ clap = { version = "4.6.7", features = ["derive"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 pcre2 = "0.2.11"
 proptest = "1.12.0"
-serde = { version = "1.0.229", features = ["derive"] }
+# TLS for AWS endpoints (issue #4): ring provider, no aws-lc-rs C build; the versions ureq's
+# `rustls` feature resolves, so infra crates that open TLS sockets share one TLS stack.
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+serde ={ version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
 test-harness = { path = "crates/test-harness" }
 thiserror = "2.0.21"
 toml = "1.1.8"
 ureq = { version = "3.5.0", default-features = false }
+# Mozilla root store compiled in: Lambda images carry no system trust store we can rely on.
+webpki-roots = { version = "1.0.12", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

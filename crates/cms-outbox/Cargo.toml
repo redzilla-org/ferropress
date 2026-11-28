@@ -1,0 +1,20 @@
+[package]
+name = "cms-outbox"
+description = "Transactional outbox rows that tell the projector job what changed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cms-db = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+cms-db = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

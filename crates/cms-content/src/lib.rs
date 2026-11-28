@@ -21,7 +21,6 @@ mod error;
 mod id;
 mod path;
 mod post;
-mod quote;
 mod sql;
 mod title;
 mod write;

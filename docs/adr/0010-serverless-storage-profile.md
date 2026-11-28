@@ -21,9 +21,26 @@ S3 objects. MySQL statement text cannot run there unchanged.
 - **Same schema shape.** The serverless profile keeps the reference tables, column names, defaults
   and indexes (`deploy/aws/dsql/0001-core.sql`, rendered from the recorded inventory), adapted only
   where DSQL forces it. It adds two tables, `fp_outbox` and `fp_schema_migrations`.
-- **Dialect at the statement builders.** `cms_db::Dialect` spells identifiers and literals. The
-  `MySql` output stays byte-identical to the reference. Each crate's `sql.rs` takes the dialect, so
-  domain crates and row parsers are shared across profiles.
+- **Dialect at the statement builders.** `cms_db::Dialect` spells identifiers and literals, and
+  `cms_db::Statement` is the one builder every crate's `sql.rs` writes through. The `MySql` output
+  stays byte-identical to the reference. On `Postgres` every identifier is double-quoted, so
+  mixed-case reference names (`ID`, `comment_ID`) keep their case and the row parsers are shared
+  across profiles. A NUL byte in a `Postgres` literal is refused before the server
+  (`LiteralError::Nul`, surfaced as each crate's `Error::Literal`).
+- **The store carries the dialect.** `cms_db::Store::dialect()` is a required method, so the
+  composition root picks the dialect by picking the adapter (`infra-mysql` is `MySql`,
+  `infra-dsql` is `Postgres`). Repository constructors are unchanged.
+- **Insert ids.** `Postgres` inserts end with `RETURNING "<id column>"`. The adapter turns that
+  row into `Reply::Done` with `cms_db::Reply::returned(affected, &rows)` whenever the server's
+  command tag is `INSERT`, so repositories read `insert_id` the same way on both profiles.
+- **Case-insensitive lookups.** The reference collation compares names case-insensitively; DSQL
+  has only the `C` collation. Name lookups (`post_name`, `option_name`) are spelled
+  `lower(col) = lower(lit)` on `Postgres`, and DSQL supports expression index keys
+  (`CREATE INDEX ASYNC … ((lower(col)))`), so the schema indexes those columns, and the user and
+  term name columns, on `lower(col)` instead of keeping a lower-cased shadow column. The
+  `option_name` unique index is on `lower()` and the option upsert is
+  `ON CONFLICT (lower("option_name")) DO UPDATE`. Meta keys stay case-sensitive: they are
+  code-defined keys, not user input.
 - **`infra-dsql`** implements `cms_db::Store` with the same `Reply` shape. SQL text differs by
   design, so differential scenarios on this profile compare results and database diffs, not
   statement text.
@@ -38,10 +55,12 @@ S3 objects. MySQL statement text cannot run there unchanged.
 
 ## Consequences
 
-- Every statement builder gains a dialect parameter. This is one mechanical change per crate,
-  verified by the existing byte-exact MySQL tests plus new PostgreSQL tests.
+- Every statement builder gains a dialect parameter and returns `Result<Sql, LiteralError>`.
+  This is one mechanical change per crate, verified by the existing byte-exact MySQL tests plus
+  new PostgreSQL tests.
+- Every `Store` implementation declares its dialect.
 - Case-insensitive reference lookups need explicit `lower()` comparisons on the serverless
-  profile.
+  profile, served by `lower()` expression indexes.
 - Writes must be retried on optimistic-concurrency conflicts, and bulk paths must chunk under the
   transaction limits.
 

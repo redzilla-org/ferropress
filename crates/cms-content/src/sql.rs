@@ -1,135 +1,164 @@
 //! Statements the reference issues for post reads and writes.
 
-use cms_db::{Sql, TableName};
+use cms_db::{Dialect, LiteralError, Sql, Statement, TableName};
 
 use crate::PostId;
 use crate::draft::{Draft, Field};
-use crate::quote::quote;
+
+/// The posts primary key, returned by `PostgreSQL` inserts.
+const ID: &[u8] = b"ID";
 
 /// Path candidates: `get_page_by_path` IN query.
-#[must_use]
-pub(crate) fn select_path(table: &TableName, names: &[Box<[u8]>], types: &[&[u8]]) -> Sql {
-    let mut sql = Vec::from(b"\n\t\tSELECT ID, post_name, post_parent, post_type\n\t\tFROM ");
-    sql.extend_from_slice(table.as_bytes());
-    sql.extend_from_slice(b"\n\t\tWHERE post_name IN (");
-    join_quoted(&mut sql, names.iter().map(AsRef::as_ref));
-    sql.extend_from_slice(b")\n\t\tAND post_type IN (");
-    join_quoted(&mut sql, types.iter().copied());
-    sql.extend_from_slice(b")\n\t");
-    Sql::new(sql)
-}
-
-fn join_quoted<'a>(sql: &mut Vec<u8>, values: impl IntoIterator<Item = &'a [u8]>) {
-    for (index, value) in values.into_iter().enumerate() {
+pub(crate) fn select_path(
+    dialect: Dialect,
+    table: &TableName,
+    names: &[Box<[u8]>],
+    types: &[&[u8]],
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("\n\t\tSELECT ")
+        .bare(ID)
+        .raw(", ")
+        .bare("post_name")
+        .raw(", ")
+        .bare("post_parent")
+        .raw(", ")
+        .bare("post_type")
+        .raw("\n\t\tFROM ")
+        .bare(table.as_bytes())
+        .raw("\n\t\tWHERE ")
+        // Slugs match case-insensitively, as the reference collation does.
+        .case_fold(|s| s.bare("post_name"))
+        .raw(" IN (");
+    for (index, name) in names.iter().enumerate() {
         if index > 0 {
-            sql.push(b',');
+            sql.raw(",");
         }
-        sql.extend(quote(value));
+        sql.case_fold(|s| s.literal(name));
     }
+    sql.raw(")\n\t\tAND ").bare("post_type").raw(" IN (");
+    for (index, kind) in types.iter().enumerate() {
+        if index > 0 {
+            sql.raw(",");
+        }
+        sql.literal(kind);
+    }
+    sql.raw(")\n\t");
+    sql.finish()
 }
 
 /// One row by slug: `SELECT * … WHERE post_name = {quoted} LIMIT 1`.
-#[must_use]
-pub(crate) fn select_name(table: &TableName, name: &[u8]) -> Sql {
-    let mut sql = Vec::from(b"SELECT * FROM ");
-    sql.extend_from_slice(table.as_bytes());
-    sql.extend_from_slice(b" WHERE post_name = ");
-    sql.extend(quote(name));
-    sql.extend_from_slice(b" LIMIT 1");
-    Sql::new(sql)
+pub(crate) fn select_name(
+    dialect: Dialect,
+    table: &TableName,
+    name: &[u8],
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("SELECT * FROM ")
+        .bare(table.as_bytes())
+        .raw(" WHERE ")
+        .case_fold(|s| s.bare("post_name"))
+        .raw(" = ")
+        .case_fold(|s| s.literal(name))
+        .raw(" LIMIT 1");
+    sql.finish()
 }
 
 /// One row: `SELECT * … WHERE ID = {id} LIMIT 1`.
-#[must_use]
-pub(crate) fn select_row(table: &TableName, id: PostId) -> Sql {
-    let mut sql = Vec::from(b"SELECT * FROM ");
-    sql.extend_from_slice(table.as_bytes());
-    sql.extend_from_slice(b" WHERE ID = ");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    sql.extend_from_slice(b" LIMIT 1");
-    Sql::new(sql)
+pub(crate) fn select_row(
+    dialect: Dialect,
+    table: &TableName,
+    id: PostId,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("SELECT * FROM ")
+        .bare(table.as_bytes())
+        .raw(" WHERE ")
+        .bare(ID)
+        .raw(" = ")
+        .number(id.as_u64())
+        .raw(" LIMIT 1");
+    sql.finish()
 }
 
 /// Compact insert of the caller-supplied cells.
-#[must_use]
-pub(crate) fn insert_row(table: &TableName, draft: &Draft) -> Sql {
-    let mut sql = Vec::from(b"INSERT INTO ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" (");
+pub(crate) fn insert_row(
+    dialect: Dialect,
+    table: &TableName,
+    draft: &Draft,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("INSERT INTO ").ident(table.as_bytes()).raw(" (");
     for (index, field) in Field::ALL.iter().enumerate() {
         if index > 0 {
-            sql.extend_from_slice(b", ");
+            sql.raw(", ");
         }
-        sql.extend(tick(field.column()));
+        sql.ident(field.column());
     }
-    sql.extend_from_slice(b") VALUES (");
+    sql.raw(") VALUES (");
     for (index, field) in Field::ALL.iter().enumerate() {
         if index > 0 {
-            sql.extend_from_slice(b", ");
+            sql.raw(", ");
         }
-        sql.extend(format_cell(*field, draft.get(*field)));
+        format_cell(&mut sql, *field, draft.get(*field));
     }
-    sql.push(b')');
-    Sql::new(sql)
+    sql.raw(")").returning(ID);
+    sql.finish()
 }
 
 /// Compact update of the caller-supplied cells for `id`.
-#[must_use]
-pub(crate) fn update_row(table: &TableName, id: PostId, draft: &Draft) -> Sql {
-    let mut sql = Vec::from(b"UPDATE ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" SET ");
+pub(crate) fn update_row(
+    dialect: Dialect,
+    table: &TableName,
+    id: PostId,
+    draft: &Draft,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("UPDATE ").ident(table.as_bytes()).raw(" SET ");
     for (index, field) in Field::ALL.iter().enumerate() {
         if index > 0 {
-            sql.extend_from_slice(b", ");
+            sql.raw(", ");
         }
-        sql.extend(tick(field.column()));
-        sql.extend_from_slice(b" = ");
-        sql.extend(format_cell(*field, draft.get(*field)));
+        sql.ident(field.column()).raw(" = ");
+        format_cell(&mut sql, *field, draft.get(*field));
     }
-    sql.extend_from_slice(b" WHERE ");
-    sql.extend(tick(b"ID"));
-    sql.extend_from_slice(b" = ");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    Sql::new(sql)
+    sql.raw(" WHERE ")
+        .ident(ID)
+        .raw(" = ")
+        .number(id.as_u64());
+    sql.finish()
 }
 
 /// Remove one id.
-#[must_use]
-pub(crate) fn delete_row(table: &TableName, id: PostId) -> Sql {
-    let mut sql = Vec::from(b"DELETE FROM ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" WHERE ");
-    sql.extend(tick(b"ID"));
-    sql.extend_from_slice(b" = ");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    Sql::new(sql)
+pub(crate) fn delete_row(
+    dialect: Dialect,
+    table: &TableName,
+    id: PostId,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("DELETE FROM ")
+        .ident(table.as_bytes())
+        .raw(" WHERE ")
+        .ident(ID)
+        .raw(" = ")
+        .number(id.as_u64());
+    sql.finish()
 }
 
-fn tick(name: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(name.len() + 2);
-    out.push(b'`');
-    out.extend_from_slice(name);
-    out.push(b'`');
-    out
-}
-
-fn format_cell(field: Field, bytes: &[u8]) -> Vec<u8> {
+// Integer columns go unquoted, as the reference's %d placeholders render them.
+fn format_cell(sql: &mut Statement, field: Field, bytes: &[u8]) {
     if field.is_integer() {
-        format_int(bytes)
+        sql.number(format_int(bytes));
     } else {
-        quote(bytes)
+        sql.literal(bytes);
     }
 }
 
-fn format_int(bytes: &[u8]) -> Vec<u8> {
-    match std::str::from_utf8(bytes)
+fn format_int(bytes: &[u8]) -> i64 {
+    std::str::from_utf8(bytes)
         .ok()
         .and_then(|text| text.parse::<i64>().ok())
-    {
-        Some(number) => number.to_string().into_bytes(),
-        None => b"0".to_vec(),
-    }
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -139,7 +168,14 @@ mod tests {
     };
     use crate::PostId;
     use crate::draft::{Draft, Field};
-    use cms_db::{TablePrefix, TableStem};
+    use cms_db::{Dialect, LiteralError, Sql, TablePrefix, TableStem};
+
+    const MY: Dialect = Dialect::MySql;
+    const PG: Dialect = Dialect::Postgres;
+
+    fn bytes(sql: Result<Sql, LiteralError>) -> Vec<u8> {
+        sql.map(|sql| sql.as_bytes().to_vec()).unwrap_or_default()
+    }
 
     fn posts_table() -> Option<(cms_db::TableName, PostId)> {
         let prefix = TablePrefix::new("wp_");
@@ -175,42 +211,78 @@ mod tests {
         assert!(opened.is_some());
         if let Some((table, id)) = opened {
             assert_eq!(
-                select_row(&table, id).as_bytes(),
+                bytes(select_row(MY, &table, id)),
                 b"SELECT * FROM wp_posts WHERE ID = 12 LIMIT 1"
             );
             assert_eq!(
-                select_path(&table, &[Box::from(*b"about")], &[b"page", b"attachment"])
-                    .as_bytes(),
+                bytes(select_path(MY, &table, &[Box::from(*b"about")], &[b"page", b"attachment"])),
                 b"\n\t\tSELECT ID, post_name, post_parent, post_type\n\t\tFROM wp_posts\n\t\tWHERE post_name IN ('about')\n\t\tAND post_type IN ('page','attachment')\n\t"
             );
             assert_eq!(
-                select_name(&table, b"hello").as_bytes(),
+                bytes(select_name(MY, &table, b"hello")),
                 b"SELECT * FROM wp_posts WHERE post_name = 'hello' LIMIT 1"
             );
             let draft = sample_draft();
             assert_eq!(
-                insert_row(&table, &draft).as_bytes(),
+                bytes(insert_row(MY, &table, &draft)),
                 b"INSERT INTO `wp_posts` (`post_author`, `post_date`, `post_date_gmt`, `post_content`, `post_content_filtered`, `post_title`, `post_excerpt`, `post_status`, `post_type`, `comment_status`, `ping_status`, `post_password`, `post_name`, `to_ping`, `pinged`, `post_modified`, `post_modified_gmt`, `post_parent`, `menu_order`, `post_mime_type`, `guid`) VALUES (1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'body', '', 'Hello', '', 'publish', 'post', 'open', 'open', '', 'hello', '', '', '2026-01-01 00:00:00', '2026-01-01 00:00:00', 0, 0, '', '')"
             );
             assert_eq!(
-                update_row(&table, id, &draft).as_bytes(),
+                bytes(update_row(MY, &table, id, &draft)),
                 b"UPDATE `wp_posts` SET `post_author` = 1, `post_date` = '2026-01-01 00:00:00', `post_date_gmt` = '2026-01-01 00:00:00', `post_content` = 'body', `post_content_filtered` = '', `post_title` = 'Hello', `post_excerpt` = '', `post_status` = 'publish', `post_type` = 'post', `comment_status` = 'open', `ping_status` = 'open', `post_password` = '', `post_name` = 'hello', `to_ping` = '', `pinged` = '', `post_modified` = '2026-01-01 00:00:00', `post_modified_gmt` = '2026-01-01 00:00:00', `post_parent` = 0, `menu_order` = 0, `post_mime_type` = '', `guid` = '' WHERE `ID` = 12"
             );
             assert_eq!(
-                delete_row(&table, id).as_bytes(),
+                bytes(delete_row(MY, &table, id)),
                 b"DELETE FROM `wp_posts` WHERE `ID` = 12"
             );
         }
     }
 
     #[test]
+    fn postgres_statements_quote_fold_and_return_the_id() {
+        let opened = posts_table();
+        assert!(opened.is_some());
+        if let Some((table, id)) = opened {
+            assert_eq!(
+                bytes(select_row(PG, &table, id)),
+                b"SELECT * FROM \"wp_posts\" WHERE \"ID\" = 12 LIMIT 1"
+            );
+            assert_eq!(
+                bytes(select_path(PG, &table, &[Box::from(*b"about"), Box::from(*b"team")], &[b"page", b"attachment"])),
+                b"\n\t\tSELECT \"ID\", \"post_name\", \"post_parent\", \"post_type\"\n\t\tFROM \"wp_posts\"\n\t\tWHERE lower(\"post_name\") IN (lower('about'),lower('team'))\n\t\tAND \"post_type\" IN ('page','attachment')\n\t"
+            );
+            assert_eq!(
+                bytes(select_name(PG, &table, b"it's")),
+                b"SELECT * FROM \"wp_posts\" WHERE lower(\"post_name\") = lower('it''s') LIMIT 1"
+            );
+            let mut draft = Draft::new();
+            draft.set(Field::Author, b"1").set(Field::Title, b"a\\b");
+            assert_eq!(
+                bytes(insert_row(PG, &table, &draft)),
+                b"INSERT INTO \"wp_posts\" (\"post_author\", \"post_date\", \"post_date_gmt\", \"post_content\", \"post_content_filtered\", \"post_title\", \"post_excerpt\", \"post_status\", \"post_type\", \"comment_status\", \"ping_status\", \"post_password\", \"post_name\", \"to_ping\", \"pinged\", \"post_modified\", \"post_modified_gmt\", \"post_parent\", \"menu_order\", \"post_mime_type\", \"guid\") VALUES (1, '', '', '', '', 'a\\b', '', '', '', '', '', '', '', '', '', '', '', 0, 0, '', '') RETURNING \"ID\""
+            );
+            let update = bytes(update_row(PG, &table, id, &draft));
+            assert!(update.starts_with(b"UPDATE \"wp_posts\" SET \"post_author\" = 1, "));
+            assert!(update.ends_with(b"\"guid\" = '' WHERE \"ID\" = 12"));
+            assert_eq!(
+                bytes(delete_row(PG, &table, id)),
+                b"DELETE FROM \"wp_posts\" WHERE \"ID\" = 12"
+            );
+            // PostgreSQL text cannot hold NUL, so the statement is refused before the server.
+            draft.set(Field::Content, b"a\0b");
+            assert_eq!(insert_row(PG, &table, &draft), Err(LiteralError::Nul));
+            assert_eq!(select_name(PG, &table, b"\0"), Err(LiteralError::Nul));
+        }
+    }
+
+    #[test]
     fn integers_are_unquoted_and_junk_is_zero() {
-        assert_eq!(format_int(b"7"), b"7");
-        assert_eq!(format_int(b"01"), b"1");
-        assert_eq!(format_int(b"-2"), b"-2");
-        assert_eq!(format_int(b""), b"0");
-        assert_eq!(format_int(b"x"), b"0");
-        assert_eq!(format_int(&[0xff]), b"0");
+        assert_eq!(format_int(b"7"), 7);
+        assert_eq!(format_int(b"01"), 1);
+        assert_eq!(format_int(b"-2"), -2);
+        assert_eq!(format_int(b""), 0);
+        assert_eq!(format_int(b"x"), 0);
+        assert_eq!(format_int(&[0xff]), 0);
         let opened = posts_table();
         assert!(opened.is_some());
         if let Some((table, _)) = opened {
@@ -220,11 +292,11 @@ mod tests {
                 .set(Field::Title, b"a'b")
                 .set(Field::Parent, b"3")
                 .set(Field::MenuOrder, b"4");
-            let sql = insert_row(&table, &draft);
-            assert!(sql.as_bytes().starts_with(b"INSERT INTO `wp_posts`"));
-            assert!(sql.as_bytes().windows(11).any(|w| w == b"VALUES (0, "));
-            assert!(sql.as_bytes().windows(6).any(|w| w == br"'a\'b'"));
-            assert!(sql.as_bytes().windows(6).any(|w| w == b", 3, 4"));
+            let sql = bytes(insert_row(MY, &table, &draft));
+            assert!(sql.starts_with(b"INSERT INTO `wp_posts`"));
+            assert!(sql.windows(11).any(|w| w == b"VALUES (0, "));
+            assert!(sql.windows(6).any(|w| w == br"'a\'b'"));
+            assert!(sql.windows(6).any(|w| w == b", 3, 4"));
         }
     }
 
@@ -237,12 +309,12 @@ mod tests {
             proptest::prop_assert!(prefix.is_ok() && stem.is_ok() && post.is_ok());
             if let (Ok(prefix), Ok(stem), Ok(post)) = (prefix, stem, post) {
                 let table = prefix.table(&stem);
-                let select = select_row(&table, post);
+                let select = bytes(select_row(MY, &table, post));
                 let expected = format!("SELECT * FROM wp_posts WHERE ID = {id} LIMIT 1");
-                proptest::prop_assert_eq!(select.as_bytes(), expected.as_bytes());
-                let delete = delete_row(&table, post);
+                proptest::prop_assert_eq!(select, expected.as_bytes());
+                let delete = bytes(delete_row(MY, &table, post));
                 let expected = format!("DELETE FROM `wp_posts` WHERE `ID` = {id}");
-                proptest::prop_assert_eq!(delete.as_bytes(), expected.as_bytes());
+                proptest::prop_assert_eq!(delete, expected.as_bytes());
             }
         }
     }

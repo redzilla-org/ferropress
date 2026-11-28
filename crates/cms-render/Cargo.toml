@@ -1,0 +1,17 @@
+[package]
+name = "cms-render"
+description = "Native built-in theme: pure renderers for pages, feeds, sitemaps and robots"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# cms-readmodel only for the shell/fragment marks, so rendered pages match what serve() assembles.
+[dependencies]
+cms-readmodel = { path = "../cms-readmodel" }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
