@@ -235,9 +235,9 @@ impl<S: Store> Projector<'_, S> {
             }
             let pages = index.pages(target);
             for number in 1..=pages {
-                let paged = target.at(number);
-                let rendering = index.render(&paged, self.cards)?;
-                place(&mut writes, self.paths, &paged, rendering, page)?;
+                let numbered = target.at(number);
+                let rendering = index.render(&numbered, self.cards)?;
+                place(&mut writes, self.paths, &numbered, rendering, page)?;
             }
             for number in (pages + 1)..=pages.saturating_add(shrink) {
                 drop_route(&mut writes, self.paths.key(&target.at(number)));

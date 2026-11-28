@@ -51,8 +51,10 @@ impl<S: Store> DbSource<S> {
         let sql = sql.finish().map_err(|error| port("source statement", &error))?;
         match self.store.query(&sql).map_err(|error| port("source store", &error))? {
             Reply::Rows(set) => Ok(set.rows().to_vec()),
-            Reply::Failed(error) => Err(PortError(format!("source query failed: {}", error.message()).into())),
-            Reply::Done { .. } => Err(PortError("source query returned no rows".into())),
+            Reply::Failed(error) => Err(PortError(
+                format!("source query failed: {}", error.message()).into(),
+            )),
+            _ => Err(PortError("source query returned no rows".into())),
         }
     }
 
