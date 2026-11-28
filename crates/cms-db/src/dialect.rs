@@ -125,6 +125,14 @@ mod tests {
         assert_eq!(quote(b"a\rb"), Some(br"'a\rb'".to_vec()));
         assert_eq!(quote(&[b'a', 0x1a, b'b']), Some(br"'a\Zb'".to_vec()));
         assert_eq!(quote(b"a\tb"), Some(b"'a\tb'".to_vec()));
+        // Cases carried over from the per-crate quote helpers this replaced.
+        assert_eq!(quote(b""), Some(br"''".to_vec()));
+        assert_eq!(quote(b"a%b"), Some(br"'a%b'".to_vec()));
+        assert_eq!(quote(b"a`b"), Some(br"'a`b'".to_vec()));
+        assert_eq!(
+            quote("caf\u{e9}".as_bytes()),
+            Some("'caf\u{e9}'".as_bytes().to_vec())
+        );
     }
 
     #[test]

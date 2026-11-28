@@ -55,10 +55,11 @@ impl<S: Store> Options<S> {
         if self.alloptions.is_some() {
             return Ok(());
         }
-        let rows = match self.query(&select_autoloaded(&self.table))? {
+        let dialect = self.store.dialect();
+        let rows = match self.query(&select_autoloaded(dialect, &self.table)?)? {
             RowsOrFailed::Rows(set) if !set.rows().is_empty() => set,
             RowsOrFailed::Rows(_) | RowsOrFailed::Failed => {
-                match self.query(&select_all(&self.table))? {
+                match self.query(&select_all(dialect, &self.table)?)? {
                     RowsOrFailed::Rows(set) => set,
                     RowsOrFailed::Failed => ResultSet::new(Vec::new(), Vec::new()),
                 }
@@ -105,7 +106,8 @@ impl<S: Store> Options<S> {
         if self.raw_get(name)?.is_some() {
             return Ok(Write::Unchanged);
         }
-        if !self.exec(&insert_row(&self.table, name, value, autoload))? {
+        let sql = insert_row(self.store.dialect(), &self.table, name, value, autoload)?;
+        if !self.exec(&sql)? {
             return Ok(Write::Unchanged);
         }
         self.remember(name, value, Some(autoload))?;
@@ -137,7 +139,8 @@ impl<S: Store> Options<S> {
                     Some(autoload) => Some(autoload),
                     None => self.reevaluate_auto(name)?,
                 };
-                if !self.exec(&update_row(&self.table, name, value, extra))? {
+                let sql = update_row(self.store.dialect(), &self.table, name, value, extra)?;
+                if !self.exec(&sql)? {
                     return Ok(Write::Unchanged);
                 }
                 self.remember(name, value, extra)?;
@@ -160,7 +163,8 @@ impl<S: Store> Options<S> {
         let Some(token) = self.autoload_token(name)? else {
             return Ok(Write::Unchanged);
         };
-        if !self.exec(&delete_row(&self.table, name))? {
+        let sql = delete_row(self.store.dialect(), &self.table, name)?;
+        if !self.exec(&sql)? {
             return Ok(Write::Unchanged);
         }
         self.forget(name, is_loaded_token(&token));
@@ -179,7 +183,8 @@ impl<S: Store> Options<S> {
         if let Some(value) = self.singles.get(name) {
             return Ok(Some(value.clone()));
         }
-        match self.query(&select_value(&self.table, name))? {
+        let sql = select_value(self.store.dialect(), &self.table, name)?;
+        match self.query(&sql)? {
             RowsOrFailed::Rows(set) => {
                 if let Some(value) = first_value(&set) {
                     self.singles.insert(name.clone(), value.clone());
@@ -214,7 +219,8 @@ impl<S: Store> Options<S> {
     }
 
     fn autoload_token(&mut self, name: &OptionName) -> Result<Option<Box<[u8]>>, Error> {
-        match self.query(&select_autoload(&self.table, name))? {
+        let sql = select_autoload(self.store.dialect(), &self.table, name)?;
+        match self.query(&sql)? {
             RowsOrFailed::Rows(set) => Ok(first_value(&set)),
             RowsOrFailed::Failed => Ok(None),
         }

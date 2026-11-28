@@ -1,154 +1,222 @@
 //! Statements the reference issues for user reads and writes.
 
-use cms_db::{Sql, TableName};
+use cms_db::{Dialect, LiteralError, Sql, Statement, TableName};
 
 use crate::UserId;
 use crate::draft::{Draft, Field};
 use crate::id::MetaId;
 use crate::key::MetaKey;
-use crate::quote::quote;
+
+/// The users primary key, returned by `PostgreSQL` inserts.
+const ID: &[u8] = b"ID";
+/// The usermeta primary key, returned by `PostgreSQL` inserts.
+const META_ID: &[u8] = b"umeta_id";
 
 /// One user's meta rows: `SELECT … WHERE user_id IN ({id}) ORDER BY umeta_id`.
-#[must_use]
-pub(crate) fn select_meta(table: &TableName, id: UserId) -> Sql {
-    let mut sql = Vec::from(b"SELECT user_id, meta_key, meta_value FROM ");
-    sql.extend_from_slice(table.as_bytes());
-    sql.extend_from_slice(b" WHERE user_id IN (");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    sql.extend_from_slice(b") ORDER BY umeta_id ASC");
-    Sql::new(sql)
+pub(crate) fn select_meta(
+    dialect: Dialect,
+    table: &TableName,
+    id: UserId,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("SELECT ")
+        .bare("user_id")
+        .raw(", ")
+        .bare("meta_key")
+        .raw(", ")
+        .bare("meta_value")
+        .raw(" FROM ")
+        .bare(table.as_bytes())
+        .raw(" WHERE ")
+        .bare("user_id")
+        .raw(" IN (")
+        .number(id.as_u64())
+        .raw(") ORDER BY ")
+        .bare(META_ID)
+        .raw(" ASC");
+    sql.finish()
 }
 
 /// One row: `SELECT * … WHERE ID = '{id}' LIMIT 1`.
-#[must_use]
-pub(crate) fn select_row(table: &TableName, id: UserId) -> Sql {
-    let mut sql = Vec::from(b"SELECT * FROM ");
-    sql.extend_from_slice(table.as_bytes());
-    sql.extend_from_slice(b" WHERE ID = '");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    sql.extend_from_slice(b"' LIMIT 1");
-    Sql::new(sql)
+pub(crate) fn select_row(
+    dialect: Dialect,
+    table: &TableName,
+    id: UserId,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    // The reference quotes the id (%s); both servers coerce the text to the column type.
+    sql.raw("SELECT * FROM ")
+        .bare(table.as_bytes())
+        .raw(" WHERE ")
+        .bare(ID)
+        .raw(" = '")
+        .number(id.as_u64())
+        .raw("' LIMIT 1");
+    sql.finish()
 }
 
 /// Insert one usermeta row: `user_id` `%d`, key and value `%s`.
-#[must_use]
-pub(crate) fn insert_meta(table: &TableName, id: UserId, key: &MetaKey, value: &[u8]) -> Sql {
-    let mut sql = Vec::from(b"INSERT INTO ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" (`user_id`, `meta_key`, `meta_value`) VALUES (");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    sql.extend_from_slice(b", ");
-    sql.extend(quote(key.as_bytes()));
-    sql.extend_from_slice(b", ");
-    sql.extend(quote(value));
-    sql.push(b')');
-    Sql::new(sql)
+pub(crate) fn insert_meta(
+    dialect: Dialect,
+    table: &TableName,
+    id: UserId,
+    key: &MetaKey,
+    value: &[u8],
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("INSERT INTO ")
+        .ident(table.as_bytes())
+        .raw(" (")
+        .ident("user_id")
+        .raw(", ")
+        .ident("meta_key")
+        .raw(", ")
+        .ident("meta_value")
+        .raw(") VALUES (")
+        .number(id.as_u64())
+        .raw(", ")
+        .literal(key.as_bytes())
+        .raw(", ")
+        .literal(value)
+        .raw(")")
+        .returning(META_ID);
+    sql.finish()
 }
 
 /// Rewrite `meta_value` for one user and key.
-#[must_use]
-pub(crate) fn update_meta(table: &TableName, id: UserId, key: &MetaKey, value: &[u8]) -> Sql {
-    let mut sql = Vec::from(b"UPDATE ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" SET `meta_value` = ");
-    sql.extend(quote(value));
-    sql.extend_from_slice(b" WHERE `user_id` = ");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    sql.extend_from_slice(b" AND `meta_key` = ");
-    sql.extend(quote(key.as_bytes()));
-    Sql::new(sql)
+pub(crate) fn update_meta(
+    dialect: Dialect,
+    table: &TableName,
+    id: UserId,
+    key: &MetaKey,
+    value: &[u8],
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("UPDATE ")
+        .ident(table.as_bytes())
+        .raw(" SET ")
+        .ident("meta_value")
+        .raw(" = ")
+        .literal(value)
+        .raw(" WHERE ")
+        .ident("user_id")
+        .raw(" = ")
+        .number(id.as_u64())
+        .raw(" AND ")
+        .ident("meta_key")
+        .raw(" = ")
+        .literal(key.as_bytes());
+    sql.finish()
 }
 
 /// Row ids for one user and key.
-#[must_use]
-pub(crate) fn select_meta_ids(table: &TableName, id: UserId, key: &MetaKey) -> Sql {
-    let mut sql = Vec::from(b"SELECT umeta_id FROM ");
-    sql.extend_from_slice(table.as_bytes());
-    sql.extend_from_slice(b" WHERE meta_key = ");
-    sql.extend(quote(key.as_bytes()));
-    sql.extend_from_slice(b" AND user_id = ");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    Sql::new(sql)
+pub(crate) fn select_meta_ids(
+    dialect: Dialect,
+    table: &TableName,
+    id: UserId,
+    key: &MetaKey,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("SELECT ")
+        .bare(META_ID)
+        .raw(" FROM ")
+        .bare(table.as_bytes())
+        .raw(" WHERE ")
+        .bare("meta_key")
+        .raw(" = ")
+        .literal(key.as_bytes())
+        .raw(" AND ")
+        .bare("user_id")
+        .raw(" = ")
+        .number(id.as_u64());
+    sql.finish()
 }
 
 /// Delete the selected `umeta_id` list. `ids` must not be empty.
-#[must_use]
-pub(crate) fn delete_meta_ids(table: &TableName, ids: &[MetaId]) -> Sql {
-    let mut sql = Vec::from(b"DELETE FROM ");
-    sql.extend_from_slice(table.as_bytes());
-    sql.extend_from_slice(b" WHERE umeta_id IN( ");
+pub(crate) fn delete_meta_ids(
+    dialect: Dialect,
+    table: &TableName,
+    ids: &[MetaId],
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("DELETE FROM ")
+        .bare(table.as_bytes())
+        .raw(" WHERE ")
+        .bare(META_ID)
+        .raw(" IN( ");
     for (index, id) in ids.iter().enumerate() {
         if index > 0 {
-            sql.push(b',');
+            sql.raw(",");
         }
-        sql.extend_from_slice(id.as_u64().to_string().as_bytes());
+        sql.number(id.as_u64());
     }
-    sql.extend_from_slice(b" )");
-    Sql::new(sql)
+    sql.raw(" )");
+    sql.finish()
 }
 
 /// Compact insert of the caller-supplied cells.
-#[must_use]
-pub(crate) fn insert_row(table: &TableName, draft: &Draft) -> Sql {
-    let mut sql = Vec::from(b"INSERT INTO ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" (");
+pub(crate) fn insert_row(
+    dialect: Dialect,
+    table: &TableName,
+    draft: &Draft,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("INSERT INTO ").ident(table.as_bytes()).raw(" (");
     for (index, field) in Field::INSERT.iter().enumerate() {
         if index > 0 {
-            sql.extend_from_slice(b", ");
+            sql.raw(", ");
         }
-        sql.extend(tick(field.column()));
+        sql.ident(field.column());
     }
-    sql.extend_from_slice(b") VALUES (");
+    sql.raw(") VALUES (");
     for (index, field) in Field::INSERT.iter().enumerate() {
         if index > 0 {
-            sql.extend_from_slice(b", ");
+            sql.raw(", ");
         }
-        sql.extend(quote(draft.get(*field)));
+        sql.literal(draft.get(*field));
     }
-    sql.push(b')');
-    Sql::new(sql)
+    sql.raw(")").returning(ID);
+    sql.finish()
 }
 
 /// Compact update of the caller-supplied cells for `id`.
-#[must_use]
-pub(crate) fn update_row(table: &TableName, id: UserId, draft: &Draft) -> Sql {
-    let mut sql = Vec::from(b"UPDATE ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" SET ");
+pub(crate) fn update_row(
+    dialect: Dialect,
+    table: &TableName,
+    id: UserId,
+    draft: &Draft,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("UPDATE ").ident(table.as_bytes()).raw(" SET ");
     for (index, field) in Field::UPDATE.iter().enumerate() {
         if index > 0 {
-            sql.extend_from_slice(b", ");
+            sql.raw(", ");
         }
-        sql.extend(tick(field.column()));
-        sql.extend_from_slice(b" = ");
-        sql.extend(quote(draft.get(*field)));
+        sql.ident(field.column())
+            .raw(" = ")
+            .literal(draft.get(*field));
     }
-    sql.extend_from_slice(b" WHERE ");
-    sql.extend(tick(b"ID"));
-    sql.extend_from_slice(b" = ");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    Sql::new(sql)
+    sql.raw(" WHERE ")
+        .ident(ID)
+        .raw(" = ")
+        .number(id.as_u64());
+    sql.finish()
 }
 
 /// Remove one id.
-#[must_use]
-pub(crate) fn delete_row(table: &TableName, id: UserId) -> Sql {
-    let mut sql = Vec::from(b"DELETE FROM ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" WHERE ");
-    sql.extend(tick(b"ID"));
-    sql.extend_from_slice(b" = ");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    Sql::new(sql)
-}
-
-fn tick(name: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(name.len() + 2);
-    out.push(b'`');
-    out.extend_from_slice(name);
-    out.push(b'`');
-    out
+pub(crate) fn delete_row(
+    dialect: Dialect,
+    table: &TableName,
+    id: UserId,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("DELETE FROM ")
+        .ident(table.as_bytes())
+        .raw(" WHERE ")
+        .ident(ID)
+        .raw(" = ")
+        .number(id.as_u64());
+    sql.finish()
 }
 
 #[cfg(test)]
@@ -161,7 +229,14 @@ mod tests {
     use crate::draft::{Draft, Field};
     use crate::id::MetaId;
     use crate::key::MetaKey;
-    use cms_db::{TablePrefix, TableStem};
+    use cms_db::{Dialect, LiteralError, Sql, TableName, TablePrefix, TableStem};
+
+    const MY: Dialect = Dialect::MySql;
+    const PG: Dialect = Dialect::Postgres;
+
+    fn bytes(sql: Result<Sql, LiteralError>) -> Vec<u8> {
+        sql.map(|sql| sql.as_bytes().to_vec()).unwrap_or_default()
+    }
 
     fn users_table() -> Option<(cms_db::TableName, UserId)> {
         let prefix = TablePrefix::new("wp_");
@@ -171,6 +246,12 @@ mod tests {
             return Some((prefix.table(&stem), id));
         }
         None
+    }
+
+    fn meta_table() -> Option<TableName> {
+        let prefix = TablePrefix::new("wp_").ok()?;
+        let stem = TableStem::new("usermeta").ok()?;
+        Some(prefix.table(&stem))
     }
 
     fn sample_draft() -> Draft {
@@ -193,7 +274,7 @@ mod tests {
         assert!(opened.is_some());
         if let Some((table, id)) = opened {
             assert_eq!(
-                select_row(&table, id).as_bytes(),
+                bytes(select_row(MY, &table, id)),
                 b"SELECT * FROM wp_users WHERE ID = '12' LIMIT 1"
             );
             let meta = TableStem::new("usermeta");
@@ -203,7 +284,7 @@ mod tests {
                 assert!(prefix.is_ok());
                 if let Ok(prefix) = prefix {
                     assert_eq!(
-                        select_meta(&prefix.table(&meta), id).as_bytes(),
+                        bytes(select_meta(MY, &prefix.table(&meta), id)),
                         b"SELECT user_id, meta_key, meta_value FROM wp_usermeta WHERE user_id IN (12) ORDER BY umeta_id ASC"
                     );
                     let key = MetaKey::new("nickname");
@@ -213,19 +294,19 @@ mod tests {
                     if let (Ok(key), Ok(mid), Ok(other)) = (key, mid, other) {
                         let table = prefix.table(&meta);
                         assert_eq!(
-                            insert_meta(&table, id, &key, b"Ada").as_bytes(),
+                            bytes(insert_meta(MY, &table, id, &key, b"Ada")),
                             b"INSERT INTO `wp_usermeta` (`user_id`, `meta_key`, `meta_value`) VALUES (12, 'nickname', 'Ada')"
                         );
                         assert_eq!(
-                            update_meta(&table, id, &key, b"Ada").as_bytes(),
+                            bytes(update_meta(MY, &table, id, &key, b"Ada")),
                             b"UPDATE `wp_usermeta` SET `meta_value` = 'Ada' WHERE `user_id` = 12 AND `meta_key` = 'nickname'"
                         );
                         assert_eq!(
-                            select_meta_ids(&table, id, &key).as_bytes(),
+                            bytes(select_meta_ids(MY, &table, id, &key)),
                             b"SELECT umeta_id FROM wp_usermeta WHERE meta_key = 'nickname' AND user_id = 12"
                         );
                         assert_eq!(
-                            delete_meta_ids(&table, &[mid, other]).as_bytes(),
+                            bytes(delete_meta_ids(MY, &table, &[mid, other])),
                             b"DELETE FROM wp_usermeta WHERE umeta_id IN( 7,8 )"
                         );
                     }
@@ -233,16 +314,69 @@ mod tests {
             }
             let draft = sample_draft();
             assert_eq!(
-                insert_row(&table, &draft).as_bytes(),
+                bytes(insert_row(MY, &table, &draft)),
                 b"INSERT INTO `wp_users` (`user_pass`, `user_nicename`, `user_email`, `user_url`, `user_registered`, `user_activation_key`, `display_name`, `user_login`) VALUES ('hash', 'ada', 'ada@example.test', 'https://ada.test', '2026-01-01 00:00:00', '', 'Ada', 'ada')"
             );
             assert_eq!(
-                update_row(&table, id, &draft).as_bytes(),
+                bytes(update_row(MY, &table, id, &draft)),
                 b"UPDATE `wp_users` SET `user_pass` = 'hash', `user_nicename` = 'ada', `user_email` = 'ada@example.test', `user_url` = 'https://ada.test', `user_registered` = '2026-01-01 00:00:00', `user_activation_key` = '', `display_name` = 'Ada' WHERE `ID` = 12"
             );
             assert_eq!(
-                delete_row(&table, id).as_bytes(),
+                bytes(delete_row(MY, &table, id)),
                 b"DELETE FROM `wp_users` WHERE `ID` = 12"
+            );
+        }
+    }
+
+    #[test]
+    fn postgres_statements_quote_every_name_and_return_ids() {
+        let opened = users_table();
+        let meta = meta_table();
+        let key = MetaKey::new("nickname");
+        let ids = (MetaId::new(7), MetaId::new(8));
+        assert!(opened.is_some() && meta.is_some() && key.is_ok());
+        if let (Some((table, id)), Some(meta), Ok(key), (Ok(mid), Ok(other))) =
+            (opened, meta, key, ids)
+        {
+            assert_eq!(
+                bytes(select_row(PG, &table, id)),
+                b"SELECT * FROM \"wp_users\" WHERE \"ID\" = '12' LIMIT 1"
+            );
+            assert_eq!(
+                bytes(select_meta(PG, &meta, id)),
+                b"SELECT \"user_id\", \"meta_key\", \"meta_value\" FROM \"wp_usermeta\" WHERE \"user_id\" IN (12) ORDER BY \"umeta_id\" ASC"
+            );
+            assert_eq!(
+                bytes(insert_meta(PG, &meta, id, &key, b"Ada")),
+                b"INSERT INTO \"wp_usermeta\" (\"user_id\", \"meta_key\", \"meta_value\") VALUES (12, 'nickname', 'Ada') RETURNING \"umeta_id\""
+            );
+            assert_eq!(
+                bytes(update_meta(PG, &meta, id, &key, b"Ada")),
+                b"UPDATE \"wp_usermeta\" SET \"meta_value\" = 'Ada' WHERE \"user_id\" = 12 AND \"meta_key\" = 'nickname'"
+            );
+            assert_eq!(
+                bytes(select_meta_ids(PG, &meta, id, &key)),
+                b"SELECT \"umeta_id\" FROM \"wp_usermeta\" WHERE \"meta_key\" = 'nickname' AND \"user_id\" = 12"
+            );
+            assert_eq!(
+                bytes(delete_meta_ids(PG, &meta, &[mid, other])),
+                b"DELETE FROM \"wp_usermeta\" WHERE \"umeta_id\" IN( 7,8 )"
+            );
+            let draft = sample_draft();
+            assert_eq!(
+                bytes(insert_row(PG, &table, &draft)),
+                b"INSERT INTO \"wp_users\" (\"user_pass\", \"user_nicename\", \"user_email\", \"user_url\", \"user_registered\", \"user_activation_key\", \"display_name\", \"user_login\") VALUES ('hash', 'ada', 'ada@example.test', 'https://ada.test', '2026-01-01 00:00:00', '', 'Ada', 'ada') RETURNING \"ID\""
+            );
+            let update = bytes(update_row(PG, &table, id, &draft));
+            assert!(update.starts_with(b"UPDATE \"wp_users\" SET \"user_pass\" = 'hash', "));
+            assert!(update.ends_with(b"\"display_name\" = 'Ada' WHERE \"ID\" = 12"));
+            assert_eq!(
+                bytes(delete_row(PG, &table, id)),
+                b"DELETE FROM \"wp_users\" WHERE \"ID\" = 12"
+            );
+            assert_eq!(
+                insert_meta(PG, &meta, id, &key, b"a\0b"),
+                Err(LiteralError::Nul)
             );
         }
     }
@@ -254,18 +388,13 @@ mod tests {
         if let Some((table, id)) = opened {
             let mut draft = Draft::new();
             draft.set(Field::Login, b"a'b").set(Field::Nicename, b"x");
-            let insert = insert_row(&table, &draft);
-            assert!(insert.as_bytes().starts_with(b"INSERT INTO `wp_users`"));
-            assert!(insert.as_bytes().ends_with(br", 'a\'b')"));
-            let update = update_row(&table, id, &draft);
-            assert!(update.as_bytes().starts_with(b"UPDATE `wp_users`"));
-            assert!(
-                !update
-                    .as_bytes()
-                    .windows(10)
-                    .any(|window| window == b"user_login")
-            );
-            assert!(update.as_bytes().ends_with(b"WHERE `ID` = 12"));
+            let insert = bytes(insert_row(MY, &table, &draft));
+            assert!(insert.starts_with(b"INSERT INTO `wp_users`"));
+            assert!(insert.ends_with(br", 'a\'b')"));
+            let update = bytes(update_row(MY, &table, id, &draft));
+            assert!(update.starts_with(b"UPDATE `wp_users`"));
+            assert!(!update.windows(10).any(|window| window == b"user_login"));
+            assert!(update.ends_with(b"WHERE `ID` = 12"));
         }
     }
 
@@ -278,20 +407,20 @@ mod tests {
             proptest::prop_assert!(prefix.is_ok() && stem.is_ok() && user.is_ok());
             if let (Ok(prefix), Ok(stem), Ok(user)) = (prefix, stem, user) {
                 let table = prefix.table(&stem);
-                let select = select_row(&table, user);
+                let select = bytes(select_row(MY, &table, user));
                 let expected = format!("SELECT * FROM wp_users WHERE ID = '{id}' LIMIT 1");
-                proptest::prop_assert_eq!(select.as_bytes(), expected.as_bytes());
-                let delete = delete_row(&table, user);
+                proptest::prop_assert_eq!(select, expected.as_bytes());
+                let delete = bytes(delete_row(MY, &table, user));
                 let expected = format!("DELETE FROM `wp_users` WHERE `ID` = {id}");
-                proptest::prop_assert_eq!(delete.as_bytes(), expected.as_bytes());
+                proptest::prop_assert_eq!(delete, expected.as_bytes());
                 let meta = TableStem::new("usermeta");
                 proptest::prop_assert!(meta.is_ok());
                 if let Ok(meta) = meta {
-                    let select = select_meta(&prefix.table(&meta), user);
+                    let select = bytes(select_meta(MY, &prefix.table(&meta), user));
                     let expected = format!(
                         "SELECT user_id, meta_key, meta_value FROM wp_usermeta WHERE user_id IN ({id}) ORDER BY umeta_id ASC"
                     );
-                    proptest::prop_assert_eq!(select.as_bytes(), expected.as_bytes());
+                    proptest::prop_assert_eq!(select, expected.as_bytes());
                 }
             }
         }

@@ -22,7 +22,6 @@ mod error;
 mod found;
 mod id;
 mod link;
-mod quote;
 mod sql;
 mod term;
 mod write;

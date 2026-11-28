@@ -1,12 +1,16 @@
 //! The SQL store port.
 
-use crate::{Reply, Sql, StoreError};
+use crate::{Dialect, Reply, Sql, StoreError};
 
 /// Executes one SQL statement and returns the server's reply.
 ///
 /// Implementations live in infrastructure crates. This trait is request-affine: a store holds one
 /// connection's state and is not assumed to be [`Send`]. Contract: `contracts/db/store.md`.
 pub trait Store {
+    /// The SQL spelling this store's server expects. Repositories build every statement in it,
+    /// so the composition root chooses the dialect by choosing the adapter.
+    fn dialect(&self) -> Dialect;
+
     /// Runs `sql` unchanged.
     ///
     /// # Errors
