@@ -24,6 +24,7 @@ mod metric;
 mod paths;
 mod plan;
 mod run;
+mod source;
 mod theme;
 mod time;
 
@@ -31,6 +32,7 @@ pub use metric::emf_line;
 pub use paths::Paths;
 pub use plan::{Affected, affected};
 pub use run::{Projector, Report};
+pub use source::DbSource;
 pub use theme::{Native, Renderer};
 pub use time::{imf_fixdate, version};
 
