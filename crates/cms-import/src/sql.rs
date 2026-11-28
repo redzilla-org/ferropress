@@ -14,6 +14,10 @@ pub(crate) enum Value<'a> {
     Int(u64),
     /// Written as a string literal.
     Text(&'a [u8]),
+    /// A string literal a lookup compares case-insensitively, as the reference's collation
+    /// does for logins and slugs; folded with `lower()` on `Postgres` (DSQL has only `C`), so
+    /// the `lower(col)` indexes in `deploy/aws/dsql/0001-core.sql` serve it.
+    Folded(&'a [u8]),
 }
 
 /// The tables an import writes, by stem.
@@ -111,7 +115,7 @@ impl Statements {
     fn value(&self, value: Value<'_>) -> Result<Vec<u8>, LiteralError> {
         match value {
             Value::Int(number) => Ok(number.to_string().into_bytes()),
-            Value::Text(bytes) => self.dialect.literal(bytes),
+            Value::Text(bytes) | Value::Folded(bytes) => self.dialect.literal(bytes),
         }
     }
 
@@ -129,9 +133,15 @@ impl Statements {
         sql.extend(self.table(table));
         for (index, (column, value)) in conditions.iter().enumerate() {
             sql.extend_from_slice(if index == 0 { b" WHERE " } else { b" AND " });
+            let fold = matches!(value, Value::Folded(_)) && self.dialect == Dialect::Postgres;
+            let (open, close): (&[u8], &[u8]) = if fold { (b"lower(", b")") } else { (b"", b"") };
+            sql.extend_from_slice(open);
             sql.extend(self.dialect.ident(column));
+            sql.extend_from_slice(close);
             sql.extend_from_slice(b" = ");
+            sql.extend_from_slice(open);
             sql.extend(self.value(*value)?);
+            sql.extend_from_slice(close);
         }
         if one {
             sql.extend_from_slice(b" LIMIT 1");
@@ -283,12 +293,12 @@ mod tests {
         let all = sql.select(
             Table::Terms,
             c("term_id"),
-            &[(c("slug"), Value::Text(b"x"))],
+            &[(c("slug"), Value::Folded(b"X"))],
             false,
         );
         assert_eq!(
             all.as_ref().map(text).ok().as_deref(),
-            Some("SELECT \"term_id\" FROM \"fp_terms\" WHERE \"slug\" = 'x'")
+            Some("SELECT \"term_id\" FROM \"fp_terms\" WHERE lower(\"slug\") = lower('X')")
         );
         assert_eq!(
             sql.max(Table::Comments).as_ref().map(text).as_deref(),
@@ -356,6 +366,17 @@ mod tests {
         assert_eq!(
             insert.as_ref().map(text).ok().as_deref(),
             Some("INSERT INTO `fp_users` (`ID`, `user_login`) VALUES (1, 'o\\'k')")
+        );
+        // The collation already folds case on MySQL, so the lookup stays plain.
+        let login = sql.select(
+            Table::Users,
+            c("ID"),
+            &[(c("user_login"), Value::Folded(b"Ok"))],
+            true,
+        );
+        assert_eq!(
+            login.as_ref().map(text).ok().as_deref(),
+            Some("SELECT `ID` FROM `fp_users` WHERE `user_login` = 'Ok' LIMIT 1")
         );
         let advance = sql.advance(Table::Users, 41);
         assert_eq!(

@@ -5,7 +5,7 @@
 //! saving a [`Checkpoint`] after each commit so a timed-out run resumes. Source ids are kept
 //! where free, re-runs match existing rows by guid plus post type (terms by slug plus taxonomy,
 //! users by login), and attachments go from a [`Fetcher`] to an [`UploadSink`]. A finished run
-//! returns one [`OutboxEvent`] asking the projector to rebuild every route. Design:
+//! returns one [`cms_outbox::Event`] asking the projector to rebuild every route. Design:
 //! `docs/aws/architecture.md` section 9.
 //!
 //! # Examples
@@ -31,7 +31,7 @@ mod tree;
 mod wxr;
 
 pub use error::{ImportError, ParseError, PortError};
-pub use import::{MAX_BATCH_BYTES, MAX_BATCH_ROWS, Options, OutboxEvent, Ports, Report, import};
+pub use import::{MAX_BATCH_BYTES, MAX_BATCH_ROWS, Options, Ports, Report, import};
 pub use ports::{Checkpoint, Fetcher, UploadSink};
 pub use record::{Author, Comment, Item, Meta, Record, Term, TermRef};
 pub use wxr::Wxr;

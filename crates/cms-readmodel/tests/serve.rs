@@ -208,6 +208,19 @@ fn inconsistent_read_models_and_store_failures_are_errors() {
         response.map_err(|e| e.to_string()),
         Err("page shell fragments/shell/s1.html has no body mark".to_owned())
     );
+    memory.blobs.insert(
+        "fragments/shell/s1.html".into(),
+        b"<html><main><!--fp:body--></main></html>".to_vec(),
+    );
+    memory.blobs.insert(
+        "rendered/p1.html".into(),
+        b"<title>Hello</title><!--fp:/head--><h1>Hello</h1>".to_vec(),
+    );
+    let response = run(&mut memory, &base, &get("/blog/hello/"));
+    assert_eq!(
+        response.map_err(|e| e.to_string()),
+        Err("page shell fragments/shell/s1.html has no head mark".to_owned())
+    );
     memory.fail = true;
     let response = run(&mut memory, &base, &get("/blog/hello/"));
     assert_eq!(

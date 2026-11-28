@@ -18,7 +18,6 @@ mod bag;
 mod draft;
 mod error;
 mod id;
-mod quote;
 mod row;
 mod sql;
 mod write;

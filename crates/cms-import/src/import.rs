@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::io::BufRead;
 
-use cms_db::{Cell, Dialect, Reply, Sql, Store, TablePrefix};
+use cms_db::{Cell, Reply, Sql, Store, TablePrefix};
+use cms_outbox::Event;
 
 use crate::error::ImportError;
 use crate::ports::{Checkpoint, Fetcher, UploadSink};
@@ -30,8 +31,6 @@ const SKIPPED_META: &str = "_edit_lock";
 pub struct Options {
     /// The site's table prefix.
     pub prefix: TablePrefix,
-    /// The store's SQL spelling.
-    pub dialect: Dialect,
     /// The uploaded export's key, named in the outbox event.
     pub source_key: String,
     /// The target site's address. Upload URLs are rewritten to it only when its host differs
@@ -47,10 +46,9 @@ pub struct Options {
 
 impl Options {
     /// Defaults: no URL rewriting, zero registration date, full-size batches.
-    pub fn new(prefix: TablePrefix, dialect: Dialect, source_key: impl Into<String>) -> Self {
+    pub fn new(prefix: TablePrefix, source_key: impl Into<String>) -> Self {
         Self {
             prefix,
-            dialect,
             source_key: source_key.into(),
             target_url: None,
             registered: ZERO_DATE.to_owned(),
@@ -83,54 +81,12 @@ impl fmt::Debug for Ports<'_> {
     }
 }
 
-/// The outbox event a finished import asks the projector for: re-render every route.
-///
-/// Fields line up with `fp_outbox` (`aggregate`, `aggregate_id`, `change`, `payload`); the
-/// outbox writer belongs to the projection phase.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct OutboxEvent {
-    /// Always `site`.
-    pub aggregate: &'static str,
-    /// Always `0`: the whole site.
-    pub aggregate_id: u64,
-    /// Always `rebuild-all`.
-    pub change: &'static str,
-    /// `{"import":"<source key>"}`.
-    pub payload: String,
-}
-
-impl OutboxEvent {
-    /// The event for an import of `source_key`.
-    #[must_use]
-    pub fn rebuild_all(source_key: &str) -> Self {
-        let mut payload = String::from("{\"import\":\"");
-        json_escape(&mut payload, source_key);
-        payload.push_str("\"}");
-        Self {
-            aggregate: "site",
-            aggregate_id: 0,
-            change: "rebuild-all",
-            payload,
-        }
-    }
-}
-
-fn json_escape(out: &mut String, text: &str) {
-    for ch in text.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            // Control characters (below 0x20) become `\u00XY`, two hex digits.
-            ch if u32::from(ch) < 0x20 => {
-                out.push_str("\\u00");
-                for nibble in [u32::from(ch) >> 4, u32::from(ch) & 0xf] {
-                    out.extend(char::from_digit(nibble, 16));
-                }
-            }
-            ch => out.push(ch),
-        }
-    }
+/// The outbox event a finished import asks the projector for: `rebuild-all` on the site,
+/// payload `{"import": "<source key>"}`. The host writes it with [`cms_outbox::write`].
+fn rebuild_event(source_key: &str) -> Event {
+    let mut payload = serde_json::Map::new();
+    payload.insert("import".to_owned(), source_key.into());
+    Event::rebuild_all().with_payload(payload)
 }
 
 /// What a run did.
@@ -173,7 +129,7 @@ pub struct Report {
     /// advanced past it.
     pub max_ids: BTreeMap<&'static str, u64>,
     /// The single outbox event to write once the run returns.
-    pub event: OutboxEvent,
+    pub event: Event,
 }
 
 /// Imports one export file.
@@ -244,11 +200,13 @@ struct Run<'a, 'p, S> {
 
 impl<'a, 'p, S: Store> Run<'a, 'p, S> {
     fn new(store: &'a mut S, ports: Ports<'p>, options: &'a Options) -> Result<Self, ImportError> {
+        // The store names its own SQL spelling, so statements cannot disagree with it.
+        let sql = Statements::new(store.dialect(), &options.prefix)?;
         Ok(Self {
             store,
             ports,
             options,
-            sql: Statements::new(options.dialect, &options.prefix)?,
+            sql,
             ids: HashMap::new(),
             users: HashMap::new(),
             authors: HashMap::new(),
@@ -279,7 +237,7 @@ impl<'a, 'p, S: Store> Run<'a, 'p, S> {
                 fixups: 0,
                 batches: 0,
                 max_ids: BTreeMap::new(),
-                event: OutboxEvent::rebuild_all(&options.source_key),
+                event: rebuild_event(&options.source_key),
             },
         })
     }
@@ -420,7 +378,7 @@ impl<'a, 'p, S: Store> Run<'a, 'p, S> {
         let sql = self.sql.select(
             Table::Users,
             b"ID",
-            &[(b"user_login", Value::Text(login.as_bytes()))],
+            &[(b"user_login", Value::Folded(login.as_bytes()))],
             true,
         )?;
         let found = self.first_id(&sql)?;
@@ -501,7 +459,7 @@ impl<'a, 'p, S: Store> Run<'a, 'p, S> {
         let sql = self.sql.select(
             Table::Terms,
             b"term_id",
-            &[(b"slug", Value::Text(slug.as_bytes()))],
+            &[(b"slug", Value::Folded(slug.as_bytes()))],
             false,
         )?;
         for term_id in self.ids_of(&sql)? {
@@ -968,8 +926,9 @@ fn nicename(login: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Options, OutboxEvent, host, nicename};
-    use cms_db::{Dialect, TablePrefix};
+    use super::{Options, host, nicename, rebuild_event};
+    use cms_db::TablePrefix;
+    use cms_outbox::{Aggregate, Change};
 
     #[test]
     fn helpers_cover_their_edges() {
@@ -977,18 +936,18 @@ mod tests {
         assert_eq!(host("example.com"), "example.com");
         assert_eq!(nicename("Ada Lovelace!"), "ada-lovelace-");
         assert_eq!(nicename(&"x".repeat(60)).len(), 50);
-        let event = OutboxEvent::rebuild_all("site/imports/a\"b\\c\n.xml");
-        assert_eq!(event.aggregate, "site");
-        assert_eq!(event.aggregate_id, 0);
-        assert_eq!(event.change, "rebuild-all");
+        let event = rebuild_event("site/imports/a.xml");
+        assert_eq!(event.aggregate(), Aggregate::Site);
+        assert_eq!(event.aggregate_id(), 0);
+        assert_eq!(event.change(), Change::RebuildAll);
         assert_eq!(
-            event.payload,
-            "{\"import\":\"site/imports/a\\\"b\\\\c\\u000a.xml\"}"
+            serde_json::Value::Object(event.payload().clone()).to_string(),
+            "{\"import\":\"site/imports/a.xml\"}"
         );
         let prefix = TablePrefix::new("fp_");
         assert!(prefix.is_ok());
         if let Ok(prefix) = prefix {
-            let mut options = Options::new(prefix, Dialect::MySql, "k");
+            let mut options = Options::new(prefix, "k");
             assert_eq!(options.caps(), (2_500, 8 * 1024 * 1024));
             options.batch_rows = 10_000;
             options.batch_bytes = 0;

@@ -12,9 +12,11 @@ repository.workspace = true
 cms-comments = { workspace = true }
 cms-content = { workspace = true }
 cms-db = { workspace = true }
+cms-outbox = { workspace = true }
 cms-taxonomy = { workspace = true }
 cms-users = { workspace = true }
 quick-xml = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

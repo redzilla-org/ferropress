@@ -2,7 +2,7 @@
 
 mod common;
 
-use cms_db::{Dialect, TablePrefix};
+use cms_db::TablePrefix;
 use cms_import::{ImportError, Options, Ports, Report, import};
 use common::{FakeStore, MapFetcher, MemoryCheckpoint, MemoryUploads, Record};
 
@@ -13,7 +13,7 @@ fn options() -> Options {
     let Ok(prefix) = TablePrefix::new("fp_") else {
         unreachable!("a literal prefix without nul");
     };
-    let mut options = Options::new(prefix, Dialect::Postgres, "site/imports/example.xml");
+    let mut options = Options::new(prefix, "site/imports/example.xml");
     options.target_url = Some("https://new.example.org".to_owned());
     "2026-11-27 00:00:00".clone_into(&mut options.registered);
     options
@@ -103,10 +103,10 @@ fn a_synthetic_export_lands_with_source_ids_links_and_rewritten_urls() {
     assert_eq!(report.links_created, 5);
     assert_eq!(report.fixups, 3);
     assert_eq!(report.batches, 1);
-    assert_eq!(report.event.change, "rebuild-all");
+    assert_eq!(report.event.change(), cms_outbox::Change::RebuildAll);
     assert_eq!(
-        report.event.payload,
-        "{\"import\":\"site/imports/example.xml\"}"
+        report.event.payload().get("import"),
+        Some(&"site/imports/example.xml".into())
     );
     let max: Vec<(&str, u64)> = report.max_ids.iter().map(|(k, v)| (*k, *v)).collect();
     assert_eq!(
@@ -225,7 +225,7 @@ fn a_second_import_of_the_same_file_writes_nothing() {
     assert_eq!(again.attachments_fetched, 0);
     assert_eq!(host.fetcher.fetched.len(), 1);
     assert_eq!(again.max_ids.get("posts"), Some(&15));
-    assert_eq!(again.event.change, "rebuild-all");
+    assert_eq!(again.event.change(), cms_outbox::Change::RebuildAll);
 
     // Running past a finished checkpoint only looks rows up.
     let resumed = host.run(&options(), SITE).expect("replay");
@@ -345,10 +345,14 @@ fn failures_stop_the_run_with_their_cause() {
 
 #[test]
 fn server_rejections_and_odd_replies_are_errors() {
-    use cms_db::{Reply, ServerError, Sql, Store, StoreError};
+    use cms_db::{Dialect, Reply, ServerError, Sql, Store, StoreError};
 
     struct Always(Reply);
     impl Store for Always {
+        fn dialect(&self) -> Dialect {
+            Dialect::Postgres
+        }
+
         fn query(&mut self, _sql: &Sql) -> Result<Reply, StoreError> {
             Ok(self.0.clone())
         }

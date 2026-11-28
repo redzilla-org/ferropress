@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cms_db::{Cell, Column, Reply, ResultSet, Row, ServerError, Sql, Store, StoreError};
+use cms_db::{Cell, Column, Dialect, Reply, ResultSet, Row, ServerError, Sql, Store, StoreError};
 use cms_import::{Checkpoint, Fetcher, PortError, UploadSink};
 
 /// One stored row: column name to bytes.
@@ -120,12 +120,33 @@ impl Cursor {
         }
     }
 
-    fn pairs(&mut self, separator: &str) -> Option<Vec<(String, Vec<u8>)>> {
+    /// `x` or, when `lower(` comes first, `lower(x)`; the flag says which.
+    fn folded<T>(&mut self, mut item: impl FnMut(&mut Self) -> Option<T>) -> Option<(T, bool)> {
+        if self.peek() != Some(&Token::Word("lower".to_owned())) {
+            return Some((item(self)?, false));
+        }
+        self.at += 1;
+        self.symbol(b'(')?;
+        let inner = item(self)?;
+        self.symbol(b')')?;
+        Some((inner, true))
+    }
+
+    /// `c = v` pairs. A `lower(c) = lower(v)` pair keeps `v` lower-cased and is flagged, so
+    /// it matches the way DSQL's case-folded lookups do.
+    fn pairs(&mut self, separator: &str) -> Option<Vec<(String, Vec<u8>, bool)>> {
         let mut pairs = Vec::new();
         loop {
-            let column = self.ident()?;
+            let (column, fold) = self.folded(Self::ident)?;
             self.symbol(b'=')?;
-            pairs.push((column, self.value()?));
+            let (mut value, fold_value) = self.folded(Self::value)?;
+            if fold != fold_value {
+                return None;
+            }
+            if fold {
+                value.make_ascii_lowercase();
+            }
+            pairs.push((column, value, fold));
             let more = match (self.peek(), separator) {
                 (Some(Token::Symbol(b',')), ",") => true,
                 (Some(Token::Word(word)), "AND") => word == "AND",
@@ -261,11 +282,10 @@ impl FakeStore {
             })
             .ok()?;
         }
-        let matching = self.rows(&table).iter().filter(|row| {
-            conditions
-                .iter()
-                .all(|(column, value)| row.get(column) == Some(value))
-        });
+        let matching = self
+            .rows(&table)
+            .iter()
+            .filter(|row| matches(row, &conditions));
         if max {
             let top = matching
                 .filter_map(|row| {
@@ -319,11 +339,8 @@ impl FakeStore {
         let conditions = cursor.pairs("AND")?;
         let mut affected = 0;
         for row in self.tables.get_mut(&table)? {
-            if conditions
-                .iter()
-                .all(|(column, value)| row.get(column) == Some(value))
-            {
-                for (column, value) in &sets {
+            if matches(row, &conditions) {
+                for (column, value, _) in &sets {
                     row.insert(column.clone(), value.clone());
                 }
                 affected += 1;
@@ -331,6 +348,19 @@ impl FakeStore {
         }
         Some(done(affected))
     }
+}
+
+/// Whether `row` meets every condition; flagged ones compare lower-cased.
+fn matches(row: &Record, conditions: &[(String, Vec<u8>, bool)]) -> bool {
+    conditions.iter().all(|(column, value, fold)| {
+        row.get(column).is_some_and(|cell| {
+            if *fold {
+                cell.to_ascii_lowercase() == *value
+            } else {
+                cell == value
+            }
+        })
+    })
 }
 
 fn done(affected: u64) -> Reply {
@@ -341,6 +371,11 @@ fn done(affected: u64) -> Reply {
 }
 
 impl Store for FakeStore {
+    // The fake parses the Postgres spelling (double-quoted identifiers), as DSQL speaks it.
+    fn dialect(&self) -> Dialect {
+        Dialect::Postgres
+    }
+
     fn query(&mut self, sql: &Sql) -> Result<Reply, StoreError> {
         self.statements += 1;
         if self.fail_at == Some(self.statements) {

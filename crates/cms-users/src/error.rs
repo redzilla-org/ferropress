@@ -39,6 +39,9 @@ pub enum Error {
     /// The prefix could not form the users table name.
     #[error(transparent)]
     Table(#[from] TableNameError),
+    /// A value cannot be written in the store's dialect (a NUL byte on `PostgreSQL`).
+    #[error(transparent)]
+    Literal(#[from] cms_db::LiteralError),
 }
 
 impl Error {
@@ -73,6 +76,12 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "a table name must not contain a nul byte"
+        );
+        let literal = Error::from(cms_db::LiteralError::Nul);
+        assert!(!literal.is_unavailable());
+        assert_eq!(
+            literal.to_string(),
+            "a PostgreSQL text literal must not contain a nul byte"
         );
         assert!(Error::Unavailable.is_unavailable());
         assert_eq!(Error::Unavailable.to_string(), "user store is unavailable");

@@ -73,7 +73,8 @@ impl<S: Store> UserMeta<S> {
     ///
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn insert(&mut self, id: UserId, key: &MetaKey, value: &[u8]) -> Result<MetaWrite, Error> {
-        let reply = self.exec(&insert_meta(&self.table, id, key, value))?;
+        let sql = insert_meta(self.store.dialect(), &self.table, id, key, value)?;
+        let reply = self.exec(&sql)?;
         self.bags.remove(&id);
         match reply {
             Reply::Done { insert_id, .. } => match MetaId::new(insert_id) {
@@ -90,7 +91,8 @@ impl<S: Store> UserMeta<S> {
     ///
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn update(&mut self, id: UserId, key: &MetaKey, value: &[u8]) -> Result<MetaWrite, Error> {
-        let reply = self.exec(&update_meta(&self.table, id, key, value))?;
+        let sql = update_meta(self.store.dialect(), &self.table, id, key, value)?;
+        let reply = self.exec(&sql)?;
         self.bags.remove(&id);
         match reply {
             Reply::Done { affected, .. } if affected > 0 => Ok(MetaWrite::Replaced),
@@ -104,7 +106,8 @@ impl<S: Store> UserMeta<S> {
     ///
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn delete(&mut self, id: UserId, key: &MetaKey) -> Result<MetaWrite, Error> {
-        let ids = match self.query(&select_meta_ids(&self.table, id, key))? {
+        let dialect = self.store.dialect();
+        let ids = match self.query(&select_meta_ids(dialect, &self.table, id, key)?)? {
             RowsOrFailed::Rows(set) => ids_from_set(&set),
             RowsOrFailed::Failed => Vec::new(),
         };
@@ -112,7 +115,7 @@ impl<S: Store> UserMeta<S> {
             self.bags.remove(&id);
             return Ok(MetaWrite::Unchanged);
         }
-        let reply = self.exec(&delete_meta_ids(&self.table, &ids))?;
+        let reply = self.exec(&delete_meta_ids(dialect, &self.table, &ids)?)?;
         self.bags.remove(&id);
         match reply {
             Reply::Done { affected, .. } if affected > 0 => Ok(MetaWrite::Removed),
@@ -124,7 +127,8 @@ impl<S: Store> UserMeta<S> {
         if self.bags.contains_key(&id) {
             return Ok(());
         }
-        let bag = match self.query(&select_meta(&self.table, id))? {
+        let sql = select_meta(self.store.dialect(), &self.table, id)?;
+        let bag = match self.query(&sql)? {
             RowsOrFailed::Rows(set) => bag_from_set(&set, id),
             RowsOrFailed::Failed => KeyBag::new(),
         };

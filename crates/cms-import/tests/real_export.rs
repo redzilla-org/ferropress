@@ -9,7 +9,7 @@ mod common;
 use std::fs::File;
 use std::io::BufReader;
 
-use cms_db::{Dialect, TablePrefix};
+use cms_db::TablePrefix;
 use cms_import::{Options, Ports, import};
 use common::{FakeStore, MapFetcher, MemoryCheckpoint, MemoryUploads};
 
@@ -19,7 +19,6 @@ fn a_real_export_imports_and_reimports_cleanly() {
     let path = std::env::var("CMS_IMPORT_WXR").expect("CMS_IMPORT_WXR");
     let options = Options::new(
         TablePrefix::new("fp_").expect("prefix"),
-        Dialect::Postgres,
         "site/imports/export.xml",
     );
     let mut store = FakeStore::default();
