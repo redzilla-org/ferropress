@@ -1,0 +1,5 @@
+# Installed packages, compiled output and synthesized templates are rebuilt, never committed
+node_modules/
+dist/
+cdk.out/
+cdk.context.json
