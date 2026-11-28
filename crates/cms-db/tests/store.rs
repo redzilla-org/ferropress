@@ -1,7 +1,7 @@
 //! SQL store port (`contracts/db/store.md`).
 
 use cms_db::{
-    Cell, NameError, Reply, Scripted, Sql, Store, StoreError, TablePrefix, TableStem,
+    Cell, Dialect, NameError, Reply, Scripted, Sql, Store, StoreError, TablePrefix, TableStem,
     store_contract,
 };
 
@@ -11,6 +11,15 @@ fn scripted_store_passes_the_trait_contract() {
         assert!(store.seen().len() == 3);
         assert!(store.query(&Sql::from("SELECT 1")).is_err());
     });
+}
+
+#[test]
+fn scripted_stores_report_their_dialect() {
+    assert_eq!(Scripted::new([]).dialect(), Dialect::MySql);
+    assert_eq!(
+        Scripted::with_dialect(Dialect::Postgres, []).dialect(),
+        Dialect::Postgres
+    );
 }
 
 #[test]

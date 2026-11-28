@@ -15,19 +15,23 @@
 //! # Ok::<(), cms_db::NameError>(())
 //! ```
 
+mod dialect;
 mod error;
 mod names;
 mod reply;
 mod sql;
+mod statement;
 mod store;
 
 #[cfg(feature = "test-util")]
 mod scripted;
 
+pub use dialect::{Dialect, LiteralError};
 pub use error::{NameError, StoreError};
 pub use names::{TableName, TablePrefix, TableStem};
 pub use reply::{Cell, Column, Reply, ResultSet, Row, ServerError};
 pub use sql::Sql;
+pub use statement::Statement;
 pub use store::Store;
 
 #[cfg(feature = "test-util")]

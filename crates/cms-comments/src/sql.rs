@@ -1,102 +1,108 @@
 //! Statements the reference issues for comment reads and writes.
 
-use cms_db::{Sql, TableName};
+use cms_db::{Dialect, LiteralError, Sql, Statement, TableName};
 
 use crate::CommentId;
 use crate::draft::{Draft, Field};
-use crate::quote::quote;
+
+/// The comments primary key, returned by `PostgreSQL` inserts.
+const ID: &[u8] = b"comment_ID";
 
 /// One row: `SELECT * … WHERE comment_ID = {id} LIMIT 1`.
-#[must_use]
-pub(crate) fn select_row(table: &TableName, id: CommentId) -> Sql {
-    let mut sql = Vec::from(b"SELECT * FROM ");
-    sql.extend_from_slice(table.as_bytes());
-    sql.extend_from_slice(b" WHERE comment_ID = ");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    sql.extend_from_slice(b" LIMIT 1");
-    Sql::new(sql)
+pub(crate) fn select_row(
+    dialect: Dialect,
+    table: &TableName,
+    id: CommentId,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("SELECT * FROM ")
+        .bare(table.as_bytes())
+        .raw(" WHERE ")
+        .bare(ID)
+        .raw(" = ")
+        .number(id.as_u64())
+        .raw(" LIMIT 1");
+    sql.finish()
 }
 
 /// Compact insert of the caller-supplied cells.
-#[must_use]
-pub(crate) fn insert_row(table: &TableName, draft: &Draft) -> Sql {
-    let mut sql = Vec::from(b"INSERT INTO ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" (");
+pub(crate) fn insert_row(
+    dialect: Dialect,
+    table: &TableName,
+    draft: &Draft,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("INSERT INTO ").ident(table.as_bytes()).raw(" (");
     for (index, field) in Field::INSERT.iter().enumerate() {
         if index > 0 {
-            sql.extend_from_slice(b", ");
+            sql.raw(", ");
         }
-        sql.extend(tick(field.column()));
+        sql.ident(field.column());
     }
-    sql.extend_from_slice(b") VALUES (");
+    sql.raw(") VALUES (");
     for (index, field) in Field::INSERT.iter().enumerate() {
         if index > 0 {
-            sql.extend_from_slice(b", ");
+            sql.raw(", ");
         }
-        sql.extend(format_cell(*field, draft.get(*field)));
+        format_cell(&mut sql, *field, draft.get(*field));
     }
-    sql.push(b')');
-    Sql::new(sql)
+    sql.raw(")").returning(ID);
+    sql.finish()
 }
 
 /// Compact update of the caller-supplied cells for `id`.
-#[must_use]
-pub(crate) fn update_row(table: &TableName, id: CommentId, draft: &Draft) -> Sql {
-    let mut sql = Vec::from(b"UPDATE ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" SET ");
+pub(crate) fn update_row(
+    dialect: Dialect,
+    table: &TableName,
+    id: CommentId,
+    draft: &Draft,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("UPDATE ").ident(table.as_bytes()).raw(" SET ");
     for (index, field) in Field::UPDATE.iter().enumerate() {
         if index > 0 {
-            sql.extend_from_slice(b", ");
+            sql.raw(", ");
         }
-        sql.extend(tick(field.column()));
-        sql.extend_from_slice(b" = ");
-        sql.extend(format_cell(*field, draft.get(*field)));
+        sql.ident(field.column()).raw(" = ");
+        format_cell(&mut sql, *field, draft.get(*field));
     }
-    sql.extend_from_slice(b" WHERE ");
-    sql.extend(tick(b"comment_ID"));
-    sql.extend_from_slice(b" = ");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    Sql::new(sql)
+    sql.raw(" WHERE ")
+        .ident(ID)
+        .raw(" = ")
+        .number(id.as_u64());
+    sql.finish()
 }
 
 /// Remove one id.
-#[must_use]
-pub(crate) fn delete_row(table: &TableName, id: CommentId) -> Sql {
-    let mut sql = Vec::from(b"DELETE FROM ");
-    sql.extend(tick(table.as_bytes()));
-    sql.extend_from_slice(b" WHERE ");
-    sql.extend(tick(b"comment_ID"));
-    sql.extend_from_slice(b" = ");
-    sql.extend_from_slice(id.as_u64().to_string().as_bytes());
-    Sql::new(sql)
+pub(crate) fn delete_row(
+    dialect: Dialect,
+    table: &TableName,
+    id: CommentId,
+) -> Result<Sql, LiteralError> {
+    let mut sql = Statement::new(dialect);
+    sql.raw("DELETE FROM ")
+        .ident(table.as_bytes())
+        .raw(" WHERE ")
+        .ident(ID)
+        .raw(" = ")
+        .number(id.as_u64());
+    sql.finish()
 }
 
-fn tick(name: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(name.len() + 2);
-    out.push(b'`');
-    out.extend_from_slice(name);
-    out.push(b'`');
-    out
-}
-
-fn format_cell(field: Field, bytes: &[u8]) -> Vec<u8> {
+// Integer columns go unquoted, as the reference's %d placeholders render them.
+fn format_cell(sql: &mut Statement, field: Field, bytes: &[u8]) {
     if field.is_integer() {
-        format_int(bytes)
+        sql.number(format_int(bytes));
     } else {
-        quote(bytes)
+        sql.literal(bytes);
     }
 }
 
-fn format_int(bytes: &[u8]) -> Vec<u8> {
-    match std::str::from_utf8(bytes)
+fn format_int(bytes: &[u8]) -> i64 {
+    std::str::from_utf8(bytes)
         .ok()
         .and_then(|text| text.parse::<i64>().ok())
-    {
-        Some(number) => number.to_string().into_bytes(),
-        None => b"0".to_vec(),
-    }
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -104,7 +110,14 @@ mod tests {
     use super::{delete_row, format_int, insert_row, select_row, update_row};
     use crate::CommentId;
     use crate::draft::{Draft, Field};
-    use cms_db::{TablePrefix, TableStem};
+    use cms_db::{Dialect, LiteralError, Sql, TablePrefix, TableStem};
+
+    const MY: Dialect = Dialect::MySql;
+    const PG: Dialect = Dialect::Postgres;
+
+    fn bytes(sql: Result<Sql, LiteralError>) -> Vec<u8> {
+        sql.map(|sql| sql.as_bytes().to_vec()).unwrap_or_default()
+    }
 
     fn comments_table() -> Option<(cms_db::TableName, CommentId)> {
         let prefix = TablePrefix::new("wp_");
@@ -142,33 +155,60 @@ mod tests {
         assert!(opened.is_some());
         if let Some((table, id)) = opened {
             assert_eq!(
-                select_row(&table, id).as_bytes(),
+                bytes(select_row(MY, &table, id)),
                 b"SELECT * FROM wp_comments WHERE comment_ID = 12 LIMIT 1"
             );
             let draft = sample_draft();
             assert_eq!(
-                insert_row(&table, &draft).as_bytes(),
+                bytes(insert_row(MY, &table, &draft)),
                 b"INSERT INTO `wp_comments` (`comment_post_ID`, `comment_author_IP`, `comment_author`, `comment_author_email`, `comment_author_url`, `comment_date`, `comment_date_gmt`, `comment_content`, `comment_karma`, `comment_approved`, `comment_agent`, `comment_type`, `comment_parent`, `user_id`) VALUES (3, '203.0.113.4', 'Ada', 'ada@example.test', 'https://ada.test', '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'hello', 0, '1', 'agent', 'comment', 0, 2)"
             );
             assert_eq!(
-                update_row(&table, id, &draft).as_bytes(),
+                bytes(update_row(MY, &table, id, &draft)),
                 b"UPDATE `wp_comments` SET `comment_post_ID` = 3, `comment_author` = 'Ada', `comment_author_email` = 'ada@example.test', `comment_author_url` = 'https://ada.test', `comment_author_IP` = '203.0.113.4', `comment_date` = '2026-01-01 00:00:00', `comment_date_gmt` = '2026-01-01 00:00:00', `comment_content` = 'hello', `comment_karma` = 0, `comment_approved` = '1', `comment_agent` = 'agent', `comment_type` = 'comment', `comment_parent` = 0, `user_id` = 2 WHERE `comment_ID` = 12"
             );
             assert_eq!(
-                delete_row(&table, id).as_bytes(),
+                bytes(delete_row(MY, &table, id)),
                 b"DELETE FROM `wp_comments` WHERE `comment_ID` = 12"
             );
         }
     }
 
     #[test]
+    fn postgres_statements_quote_every_name_and_return_the_id() {
+        let opened = comments_table();
+        assert!(opened.is_some());
+        if let Some((table, id)) = opened {
+            assert_eq!(
+                bytes(select_row(PG, &table, id)),
+                b"SELECT * FROM \"wp_comments\" WHERE \"comment_ID\" = 12 LIMIT 1"
+            );
+            let draft = sample_draft();
+            assert_eq!(
+                bytes(insert_row(PG, &table, &draft)),
+                b"INSERT INTO \"wp_comments\" (\"comment_post_ID\", \"comment_author_IP\", \"comment_author\", \"comment_author_email\", \"comment_author_url\", \"comment_date\", \"comment_date_gmt\", \"comment_content\", \"comment_karma\", \"comment_approved\", \"comment_agent\", \"comment_type\", \"comment_parent\", \"user_id\") VALUES (3, '203.0.113.4', 'Ada', 'ada@example.test', 'https://ada.test', '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'hello', 0, '1', 'agent', 'comment', 0, 2) RETURNING \"comment_ID\""
+            );
+            let update = bytes(update_row(PG, &table, id, &draft));
+            assert!(update.starts_with(b"UPDATE \"wp_comments\" SET \"comment_post_ID\" = 3, "));
+            assert!(update.ends_with(b"\"user_id\" = 2 WHERE \"comment_ID\" = 12"));
+            assert_eq!(
+                bytes(delete_row(PG, &table, id)),
+                b"DELETE FROM \"wp_comments\" WHERE \"comment_ID\" = 12"
+            );
+            let mut bad = Draft::new();
+            bad.set(Field::Content, b"a\0b");
+            assert_eq!(insert_row(PG, &table, &bad), Err(LiteralError::Nul));
+        }
+    }
+
+    #[test]
     fn integers_are_unquoted_and_junk_is_zero() {
-        assert_eq!(format_int(b"7"), b"7");
-        assert_eq!(format_int(b"01"), b"1");
-        assert_eq!(format_int(b"-2"), b"-2");
-        assert_eq!(format_int(b""), b"0");
-        assert_eq!(format_int(b"x"), b"0");
-        assert_eq!(format_int(&[0xff]), b"0");
+        assert_eq!(format_int(b"7"), 7);
+        assert_eq!(format_int(b"01"), 1);
+        assert_eq!(format_int(b"-2"), -2);
+        assert_eq!(format_int(b""), 0);
+        assert_eq!(format_int(b"x"), 0);
+        assert_eq!(format_int(&[0xff]), 0);
         let opened = comments_table();
         assert!(opened.is_some());
         if let Some((table, _)) = opened {
@@ -179,16 +219,12 @@ mod tests {
                 .set(Field::Karma, b"3")
                 .set(Field::Parent, b"4")
                 .set(Field::UserId, b"5");
-            let sql = insert_row(&table, &draft);
-            assert!(sql.as_bytes().starts_with(b"INSERT INTO `wp_comments`"));
-            assert!(
-                sql.as_bytes()
-                    .windows(11)
-                    .any(|window| window == b"VALUES (0, ")
-            );
-            assert!(sql.as_bytes().windows(6).any(|window| window == br"'a\'b'"));
-            assert!(sql.as_bytes().windows(7).any(|window| window == b", 3, ''"));
-            assert!(sql.as_bytes().ends_with(b", 4, 5)"));
+            let sql = bytes(insert_row(MY, &table, &draft));
+            assert!(sql.starts_with(b"INSERT INTO `wp_comments`"));
+            assert!(sql.windows(11).any(|window| window == b"VALUES (0, "));
+            assert!(sql.windows(6).any(|window| window == br"'a\'b'"));
+            assert!(sql.windows(7).any(|window| window == b", 3, ''"));
+            assert!(sql.ends_with(b", 4, 5)"));
         }
     }
 
@@ -201,12 +237,12 @@ mod tests {
             proptest::prop_assert!(prefix.is_ok() && stem.is_ok() && comment.is_ok());
             if let (Ok(prefix), Ok(stem), Ok(comment)) = (prefix, stem, comment) {
                 let table = prefix.table(&stem);
-                let select = select_row(&table, comment);
+                let select = bytes(select_row(MY, &table, comment));
                 let expected = format!("SELECT * FROM wp_comments WHERE comment_ID = {id} LIMIT 1");
-                proptest::prop_assert_eq!(select.as_bytes(), expected.as_bytes());
-                let delete = delete_row(&table, comment);
+                proptest::prop_assert_eq!(select, expected.as_bytes());
+                let delete = bytes(delete_row(MY, &table, comment));
                 let expected = format!("DELETE FROM `wp_comments` WHERE `comment_ID` = {id}");
-                proptest::prop_assert_eq!(delete.as_bytes(), expected.as_bytes());
+                proptest::prop_assert_eq!(delete, expected.as_bytes());
             }
         }
     }
