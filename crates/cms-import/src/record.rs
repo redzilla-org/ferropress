@@ -214,7 +214,9 @@ impl Record {
 }
 
 fn meta_bytes(meta: &[Meta]) -> usize {
-    meta.iter().map(|pair| pair.key.len() + pair.value.len()).sum()
+    meta.iter()
+        .map(|pair| pair.key.len() + pair.value.len())
+        .sum()
 }
 
 fn to_u64(value: usize) -> u64 {
@@ -227,7 +229,8 @@ fn number(node: &Node, field: &'static str) -> Result<u64, ParseError> {
     if text.is_empty() {
         return Ok(0);
     }
-    text.parse::<u64>().map_err(|_| ParseError::Number {
+    // The parse error adds nothing beyond the field and value named here.
+    text.parse::<u64>().ok().ok_or_else(|| ParseError::Number {
         field,
         value: Box::from(text),
     })

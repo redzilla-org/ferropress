@@ -276,7 +276,9 @@ mod tests {
         );
         assert_eq!(
             select.as_ref().map(text).ok().as_deref(),
-            Some("SELECT \"ID\" FROM \"fp_posts\" WHERE \"guid\" = 'a''b' AND \"post_type\" = 'post' LIMIT 1")
+            Some(
+                "SELECT \"ID\" FROM \"fp_posts\" WHERE \"guid\" = 'a''b' AND \"post_type\" = 'post' LIMIT 1"
+            )
         );
         let all = sql.select(
             Table::Terms,
@@ -302,7 +304,9 @@ mod tests {
         );
         assert_eq!(
             insert.as_ref().map(text).ok().as_deref(),
-            Some("INSERT INTO \"fp_term_relationships\" (\"object_id\", \"term_taxonomy_id\") VALUES (3, 4)")
+            Some(
+                "INSERT INTO \"fp_term_relationships\" (\"object_id\", \"term_taxonomy_id\") VALUES (3, 4)"
+            )
         );
         let update = sql.update(
             Table::Taxonomy,
@@ -315,14 +319,19 @@ mod tests {
         );
         assert_eq!(
             update.as_ref().map(text).ok().as_deref(),
-            Some("UPDATE \"fp_term_taxonomy\" SET \"parent\" = 2, \"description\" = 'd' WHERE \"term_taxonomy_id\" = 9")
+            Some(
+                "UPDATE \"fp_term_taxonomy\" SET \"parent\" = 2, \"description\" = 'd' WHERE \"term_taxonomy_id\" = 9"
+            )
         );
         let advance = sql.advance(Table::Posts, 41);
         assert_eq!(
             advance.ok().flatten().as_ref().map(text).as_deref(),
             Some("SELECT setval(pg_get_serial_sequence('\"fp_posts\"', 'ID'), 41)")
         );
-        assert!(sql.advance(Table::Links, 1).is_ok_and(|none| none.is_none()));
+        assert!(
+            sql.advance(Table::Links, 1)
+                .is_ok_and(|none| none.is_none())
+        );
         assert!(matches!(
             sql.insert(Table::Posts, &[(c("post_title"), Value::Text(b"a\0b"))]),
             Err(LiteralError::Nul)

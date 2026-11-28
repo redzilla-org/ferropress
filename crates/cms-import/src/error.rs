@@ -129,7 +129,10 @@ mod tests {
             url: "https://example.com/a.jpg".into(),
             source: port.clone(),
         };
-        assert_eq!(fetch.to_string(), "fetch https://example.com/a.jpg: timeout");
+        assert_eq!(
+            fetch.to_string(),
+            "fetch https://example.com/a.jpg: timeout"
+        );
         let upload = ImportError::Upload {
             path: "2026/01/a.jpg".into(),
             source: port.clone(),
@@ -139,7 +142,10 @@ mod tests {
             ImportError::Checkpoint(port).to_string(),
             "checkpoint: timeout"
         );
-        assert_eq!(ImportError::MissingGuid(3).to_string(), "item 3 has no guid");
+        assert_eq!(
+            ImportError::MissingGuid(3).to_string(),
+            "item 3 has no guid"
+        );
         assert!(ImportError::AttachmentPath(4).to_string().contains('4'));
         assert!(
             ImportError::RecordTooLarge {
@@ -151,7 +157,11 @@ mod tests {
             .contains("2 rows")
         );
         assert!(ImportError::CheckpointMismatch(5).to_string().contains('5'));
-        assert!(ImportError::Reply("SELECT 1".into()).to_string().contains("SELECT 1"));
+        assert!(
+            ImportError::Reply("SELECT 1".into())
+                .to_string()
+                .contains("SELECT 1")
+        );
         assert!(
             ImportError::Server {
                 code: 1,
@@ -165,7 +175,11 @@ mod tests {
             value: "x".into(),
         };
         assert!(ImportError::from(number).to_string().contains("wp:post_id"));
-        assert!(ParseError::Truncated("item".into()).to_string().contains("item"));
+        assert!(
+            ParseError::Truncated("item".into())
+                .to_string()
+                .contains("item")
+        );
         assert!(ParseError::TooDeep(8).to_string().contains('8'));
         assert!(
             ImportError::from(cms_db::StoreError::Unavailable)

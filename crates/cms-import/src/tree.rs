@@ -64,13 +64,21 @@ impl Node {
     }
 
     /// Direct children named `name`, in document order.
-    pub(crate) fn children<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Node> + 'a {
-        self.children.iter().filter(move |child| child.name() == name)
+    pub(crate) fn children<'a, 'n>(
+        &'a self,
+        name: &'n str,
+    ) -> impl Iterator<Item = &'a Node> + use<'a, 'n> {
+        self.children
+            .iter()
+            .filter(move |child| child.name() == name)
     }
 
     /// The text of the first direct child named `name`, or empty when there is none.
     pub(crate) fn field(&self, name: &str) -> &str {
-        self.children(name).next().map_or("", Node::text)
+        self.children
+            .iter()
+            .find(|child| child.name() == name)
+            .map_or("", Node::text)
     }
 
     /// Reads events after `self`'s start tag up to its matching end tag.
@@ -165,9 +173,16 @@ mod tests {
             read("<item><title>x</title>"),
             Err(ParseError::Truncated(name)) if name.as_ref() == "item"
         ));
-        let deep = format!("{}{}", "<a>".repeat(MAX_DEPTH + 1), "</a>".repeat(MAX_DEPTH + 1));
+        let deep = format!(
+            "{}{}",
+            "<a>".repeat(MAX_DEPTH + 1),
+            "</a>".repeat(MAX_DEPTH + 1)
+        );
         assert!(matches!(read(&deep), Err(ParseError::TooDeep(_))));
-        assert!(matches!(read("<item><a></b></item>"), Err(ParseError::Xml(_))));
+        assert!(matches!(
+            read("<item><a></b></item>"),
+            Err(ParseError::Xml(_))
+        ));
         assert!(matches!(
             read("<item><a x=\"1\" x=\"2\"/></item>"),
             Err(ParseError::Attribute(_))

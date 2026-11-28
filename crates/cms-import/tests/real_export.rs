@@ -9,9 +9,9 @@ mod common;
 use std::fs::File;
 use std::io::BufReader;
 
-use common::{FakeStore, MapFetcher, MemoryCheckpoint, MemoryUploads};
 use cms_db::{Dialect, TablePrefix};
 use cms_import::{Options, Ports, import};
+use common::{FakeStore, MapFetcher, MemoryCheckpoint, MemoryUploads};
 
 #[test]
 #[ignore = "needs CMS_IMPORT_WXR pointing at a local export file"]
@@ -23,7 +23,7 @@ fn a_real_export_imports_and_reimports_cleanly() {
         "site/imports/export.xml",
     );
     let mut store = FakeStore::default();
-    let mut run = |store: &mut FakeStore| {
+    let run = |store: &mut FakeStore| {
         let mut checkpoint = MemoryCheckpoint::default();
         let mut fetcher = MapFetcher::default();
         let mut uploads = MemoryUploads::default();

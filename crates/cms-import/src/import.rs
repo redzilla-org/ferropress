@@ -121,7 +121,13 @@ fn json_escape(out: &mut String, text: &str) {
         match ch {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
-            ch if u32::from(ch) < 0x20 => out.push_str(&format!("\\u{:04x}", u32::from(ch))),
+            // Control characters (below 0x20) become `\u00XY`, two hex digits.
+            ch if u32::from(ch) < 0x20 => {
+                out.push_str("\\u00");
+                for nibble in [u32::from(ch) >> 4, u32::from(ch) & 0xf] {
+                    out.extend(char::from_digit(nibble, 16));
+                }
+            }
             ch => out.push(ch),
         }
     }
@@ -224,6 +230,8 @@ struct Run<'a, 'p, S> {
     users: HashMap<String, u64>,
     authors: HashMap<u64, u64>,
     terms: HashMap<(String, String), (u64, u64)>,
+    /// Terms (taxonomy, slug) declared so far in this file, in file order.
+    declared: HashSet<(String, String)>,
     posts: HashMap<u64, u64>,
     post_fixups: Vec<(u64, u64)>,
     term_fixups: Vec<(u64, String, String)>,
@@ -245,6 +253,7 @@ impl<'a, 'p, S: Store> Run<'a, 'p, S> {
             users: HashMap::new(),
             authors: HashMap::new(),
             terms: HashMap::new(),
+            declared: HashSet::new(),
             posts: HashMap::new(),
             post_fixups: Vec::new(),
             term_fixups: Vec::new(),
@@ -385,9 +394,7 @@ impl<'a, 'p, S: Store> Run<'a, 'p, S> {
             None => (0, 0, false),
         };
         // Above the stored maximum and unclaimed by this run means free without a lookup.
-        let free = source > 0
-            && !taken
-            && (source > loaded || !self.exists(table, source)?);
+        let free = source > 0 && !taken && (source > loaded || !self.exists(table, source)?);
         let id = if free { source } else { max + 1 };
         if let Some(ids) = self.ids.get_mut(&table) {
             ids.max = ids.max.max(id);
@@ -516,13 +523,17 @@ impl<'a, 'p, S: Store> Run<'a, 'p, S> {
     }
 
     fn term(&mut self, term: &Term, replay: bool, index: u64) -> Result<(), ImportError> {
+        let parent_seen = self
+            .declared
+            .contains(&(term.taxonomy.clone(), term.parent.clone()));
+        self.declared
+            .insert((term.taxonomy.clone(), term.slug.clone()));
         if let Some((_, taxonomy_id)) = self.find_term(&term.taxonomy, &term.slug)? {
             self.report.terms_matched += 1;
-            // A parent that appears later was fixed up at the end of the run that wrote this.
-            if replay
-                && !term.parent.is_empty()
-                && self.find_term(&term.taxonomy, &term.parent)?.is_none()
-            {
+            // A parent declared later in the file is fixed up at the end of the run, which the
+            // run that wrote this may not have reached; the parent may already be stored
+            // (a later batch committed), so file order decides, not a lookup.
+            if replay && !term.parent.is_empty() && !parent_seen {
                 self.term_fixups
                     .push((taxonomy_id, term.taxonomy.clone(), term.parent.clone()));
             }
@@ -877,9 +888,12 @@ impl<'a, 'p, S: Store> Run<'a, 'p, S> {
         for (id, source) in std::mem::take(&mut self.post_fixups) {
             if let Some(parent) = self.posts.get(&source).copied() {
                 self.fixup_room(total)?;
-                let sql =
-                    self.sql
-                        .update(Table::Posts, &[(b"post_parent", Value::Int(parent))], b"ID", id)?;
+                let sql = self.sql.update(
+                    Table::Posts,
+                    &[(b"post_parent", Value::Int(parent))],
+                    b"ID",
+                    id,
+                )?;
                 self.write(&sql)?;
                 self.report.fixups += 1;
             }
@@ -929,7 +943,10 @@ impl<'a, 'p, S: Store> Run<'a, 'p, S> {
 /// The lower-cased host of `url` (between `://` and the next `/`).
 fn host(url: &str) -> String {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
-    rest.split('/').next().unwrap_or_default().to_ascii_lowercase()
+    rest.split('/')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }
 
 /// A login reduced to the characters the reference keeps in `user_nicename`.

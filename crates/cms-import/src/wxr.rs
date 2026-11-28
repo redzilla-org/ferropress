@@ -121,16 +121,27 @@ mod tests {
         assert!(parsed.is_ok());
         let Ok(parsed) = parsed else { return };
         assert_eq!(parsed.len(), 5);
-        assert_eq!(parsed[0], Record::Site("https://old.example.com".to_owned()));
-        assert!(matches!(&parsed[1], Record::Author(a) if a.id == 3 && a.login == "ada"
+        assert_eq!(
+            parsed[0],
+            Record::Site("https://old.example.com".to_owned())
+        );
+        assert!(
+            matches!(&parsed[1], Record::Author(a) if a.id == 3 && a.login == "ada"
             && a.email == "ada@example.com" && a.display_name == "Ada"
-            && a.first_name == "A" && a.last_name == "L"));
-        assert!(matches!(&parsed[2], Record::Term(t) if t.taxonomy == "category" && t.slug == "news"
-            && t.parent == "top" && t.name == "News &amp; more" && t.description == "d" && t.id == 5));
-        assert!(matches!(&parsed[3], Record::Term(t) if t.taxonomy == "post_tag" && t.slug == "t"
-            && t.parent.is_empty() && t.name == "T"));
-        assert!(matches!(&parsed[4], Record::Term(t) if t.taxonomy == "genre" && t.slug == "g"
-            && t.meta.len() == 1 && t.meta[0].key == "color" && t.meta[0].value == "red"));
+            && a.first_name == "A" && a.last_name == "L")
+        );
+        assert!(
+            matches!(&parsed[2], Record::Term(t) if t.taxonomy == "category" && t.slug == "news"
+            && t.parent == "top" && t.name == "News &amp; more" && t.description == "d" && t.id == 5)
+        );
+        assert!(
+            matches!(&parsed[3], Record::Term(t) if t.taxonomy == "post_tag" && t.slug == "t"
+            && t.parent.is_empty() && t.name == "T")
+        );
+        assert!(
+            matches!(&parsed[4], Record::Term(t) if t.taxonomy == "genre" && t.slug == "g"
+            && t.meta.len() == 1 && t.meta[0].key == "color" && t.meta[0].value == "red")
+        );
         assert_eq!(parsed[0].weight(), (0, 0));
         assert_eq!(parsed[1].weight().0, 1);
         assert_eq!(parsed[4].weight().0, 3);
@@ -183,19 +194,33 @@ mod tests {
         assert_eq!(item.password, "pw");
         assert_eq!(item.terms.len(), 1);
         assert_eq!(
-            (item.terms[0].taxonomy.as_str(), item.terms[0].slug.as_str(), item.terms[0].name.as_str()),
+            (
+                item.terms[0].taxonomy.as_str(),
+                item.terms[0].slug.as_str(),
+                item.terms[0].name.as_str()
+            ),
             ("category", "news", "News")
         );
-        assert_eq!((item.meta[0].key.as_str(), item.meta[0].value.as_str()), ("k", "v"));
+        assert_eq!(
+            (item.meta[0].key.as_str(), item.meta[0].value.as_str()),
+            ("k", "v")
+        );
         let comment = &item.comments[0];
         assert_eq!((comment.id, comment.parent, comment.user_id), (9, 8, 3));
         assert_eq!(comment.author, "Bo");
         assert_eq!(comment.author_email, "bo@example.com");
         assert_eq!(comment.author_url, "u");
         assert_eq!(comment.author_ip, "127.0.0.1");
-        assert_eq!((comment.date.as_str(), comment.date_gmt.as_str()), ("d", "dg"));
         assert_eq!(
-            (comment.content.as_str(), comment.approved.as_str(), comment.kind.as_str()),
+            (comment.date.as_str(), comment.date_gmt.as_str()),
+            ("d", "dg")
+        );
+        assert_eq!(
+            (
+                comment.content.as_str(),
+                comment.approved.as_str(),
+                comment.kind.as_str()
+            ),
             ("c", "1", "comment")
         );
         assert_eq!(comment.meta[0].key, "ck");
@@ -216,11 +241,20 @@ mod tests {
     #[test]
     fn bad_numbers_and_truncation_fail() {
         let bad = format!("{HEAD}<item><wp:post_id>x</wp:post_id></item></channel></rss>");
-        assert!(matches!(records(&bad), Err(ParseError::Number { field: "wp:post_id", .. })));
+        assert!(matches!(
+            records(&bad),
+            Err(ParseError::Number {
+                field: "wp:post_id",
+                ..
+            })
+        ));
         let bad_comment = format!(
             "{HEAD}<item><wp:comment><wp:comment_id>-1</wp:comment_id></wp:comment></item></channel></rss>"
         );
-        assert!(matches!(records(&bad_comment), Err(ParseError::Number { .. })));
+        assert!(matches!(
+            records(&bad_comment),
+            Err(ParseError::Number { .. })
+        ));
         let bad_author = format!("{HEAD}<wp:author><wp:author_id>?</wp:author_id></wp:author>");
         assert!(records(&bad_author).is_err());
         let bad_term = format!("{HEAD}<wp:tag><wp:term_id>?</wp:term_id></wp:tag>");

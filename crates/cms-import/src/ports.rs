@@ -1,6 +1,6 @@
 //! Ports the import job needs from its host: resume state, attachment source and upload target.
 //!
-//! The Lambda wires these to DynamoDB (`IMPORT#<upload key>` / `C`), HTTP and S3
+//! The Lambda wires these to `DynamoDB` (`IMPORT#<upload key>` / `C`), HTTP and S3
 //! (`site/uploads/`); tests use in-memory fakes.
 
 use crate::error::PortError;

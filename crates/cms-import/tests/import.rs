@@ -2,9 +2,9 @@
 
 mod common;
 
-use common::{FakeStore, MapFetcher, MemoryCheckpoint, MemoryUploads, Record};
 use cms_db::{Dialect, TablePrefix};
 use cms_import::{ImportError, Options, Ports, Report, import};
+use common::{FakeStore, MapFetcher, MemoryCheckpoint, MemoryUploads, Record};
 
 const SITE: &str = include_str!("fixtures/site.xml");
 const PHOTO_URL: &str = "https://old.example.com/wp-content/uploads/2026/01/tower.jpg";
@@ -15,7 +15,7 @@ fn options() -> Options {
     };
     let mut options = Options::new(prefix, Dialect::Postgres, "site/imports/example.xml");
     options.target_url = Some("https://new.example.org".to_owned());
-    options.registered = "2026-11-27 00:00:00".to_owned();
+    "2026-11-27 00:00:00".clone_into(&mut options.registered);
     options
 }
 
@@ -81,6 +81,10 @@ fn cell(record: &Record, column: &str) -> String {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one round trip checked table by table reads best in one place"
+)]
 fn a_synthetic_export_lands_with_source_ids_links_and_rewritten_urls() {
     let mut host = Host::new();
     let report = host.run(&options(), SITE).expect("import");
@@ -119,9 +123,11 @@ fn a_synthetic_export_lands_with_source_ids_links_and_rewritten_urls() {
         ]
     );
     assert_eq!(host.store.advanced.len(), 8);
-    assert!(host.store.advanced.contains(
-        &"SELECT setval(pg_get_serial_sequence('\"fp_posts\"', 'ID'), 15)".to_owned()
-    ));
+    assert!(
+        host.store.advanced.contains(
+            &"SELECT setval(pg_get_serial_sequence('\"fp_posts\"', 'ID'), 15)".to_owned()
+        )
+    );
     assert_eq!(host.checkpoint.records, Some(12));
 
     let get = |table: &str, key: &str, value: &str| {
@@ -144,7 +150,10 @@ fn a_synthetic_export_lands_with_source_ids_links_and_rewritten_urls() {
         "https://new.example.org/wp-content/uploads/2026/01/tower.jpg"
     );
     assert_eq!(
-        host.uploads.objects.get("2026/01/tower.jpg").map(Vec::as_slice),
+        host.uploads
+            .objects
+            .get("2026/01/tower.jpg")
+            .map(Vec::as_slice),
         Some(&b"jpeg bytes"[..])
     );
     let post = get("fp_posts", "ID", "11");
@@ -163,7 +172,10 @@ fn a_synthetic_export_lands_with_source_ids_links_and_rewritten_urls() {
     assert_eq!(cell(draft, "menu_order"), "2");
     assert_eq!(cell(draft, "post_author"), "3");
     assert_eq!(
-        cell(get("fp_posts", "guid", "https://old.example.com/?p=14"), "ID"),
+        cell(
+            get("fp_posts", "guid", "https://old.example.com/?p=14"),
+            "ID"
+        ),
         "15"
     );
 
@@ -175,7 +187,10 @@ fn a_synthetic_export_lands_with_source_ids_links_and_rewritten_urls() {
         cell(get("fp_terms", "slug", "places"), "name"),
         "Places &amp; Spaces"
     );
-    assert_eq!(cell(get("fp_termmeta", "term_id", "6"), "meta_value"), "blue");
+    assert_eq!(
+        cell(get("fp_termmeta", "term_id", "6"), "meta_value"),
+        "blue"
+    );
     assert_eq!(host.store.tables["fp_term_relationships"].len(), 5);
 
     // Meta and comments: the edit lock is dropped, replies point at their parents.
@@ -184,10 +199,7 @@ fn a_synthetic_export_lands_with_source_ids_links_and_rewritten_urls() {
     assert_eq!(cell(reply, "comment_parent"), "8");
     assert_eq!(cell(reply, "comment_type"), "comment");
     assert_eq!(cell(reply, "comment_post_ID"), "11");
-    assert_eq!(
-        cell(get("fp_comments", "comment_ID", "8"), "user_id"),
-        "2"
-    );
+    assert_eq!(cell(get("fp_comments", "comment_ID", "8"), "user_id"), "2");
     assert_eq!(
         cell(get("fp_commentmeta", "comment_id", "7"), "meta_key"),
         "rating"
@@ -224,10 +236,11 @@ fn a_second_import_of_the_same_file_writes_nothing() {
 #[test]
 fn a_run_that_dies_anywhere_resumes_to_the_same_rows() {
     let mut small = options();
-    small.batch_rows = 6;
+    // The largest fixture record's row bound (22), so the run splits into several batches.
+    small.batch_rows = 22;
     let mut clean = Host::new();
     let report = clean.run(&small, SITE).expect("clean run");
-    assert!(report.batches > 2, "batches {}", report.batches);
+    assert!(report.batches > 1, "batches {}", report.batches);
     let expected = clean.store.dump();
     let total = clean.store.statements;
 
@@ -313,7 +326,8 @@ fn failures_stop_the_run_with_their_cause() {
     // A taken source comment id moves past the maximum instead of colliding.
     let mut host = Host::new();
     host.store.seed("fp_comments", &[("comment_ID", "7")]);
-    host.run(&options(), SITE).expect("import beside a taken comment id");
+    host.run(&options(), SITE)
+        .expect("import beside a taken comment id");
     assert_eq!(
         row(&host, "fp_comments", "comment_ID", "8").map(|reply| cell(reply, "comment_parent")),
         Some("9".to_owned())
@@ -321,7 +335,10 @@ fn failures_stop_the_run_with_their_cause() {
 
     let mut host = Host::new();
     assert!(matches!(
-        host.run(&options(), "<rss><channel><item><wp:post_id>x</wp:post_id></item></channel></rss>"),
+        host.run(
+            &options(),
+            "<rss><channel><item><wp:post_id>x</wp:post_id></item></channel></rss>"
+        ),
         Err(ImportError::Parse(_))
     ));
 }

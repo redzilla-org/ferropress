@@ -1,4 +1,4 @@
-//! In-memory fakes for the import tests: a store that executes the PostgreSQL statements the
+//! In-memory fakes for the import tests: a store that executes the `PostgreSQL` statements the
 //! import emits against tables held in memory, and the three ports.
 
 use std::collections::BTreeMap;
@@ -7,9 +7,9 @@ use cms_db::{Cell, Column, Reply, ResultSet, Row, ServerError, Sql, Store, Store
 use cms_import::{Checkpoint, Fetcher, PortError, UploadSink};
 
 /// One stored row: column name to bytes.
-pub type Record = BTreeMap<String, Vec<u8>>;
+pub(crate) type Record = BTreeMap<String, Vec<u8>>;
 /// Every table's rows.
-pub type Tables = BTreeMap<String, Vec<Record>>;
+pub(crate) type Tables = BTreeMap<String, Vec<Record>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Token {
@@ -164,22 +164,22 @@ fn key_columns(table: &str) -> &'static [&'static str] {
 
 /// A store over in-memory tables with `BEGIN`/`COMMIT`, a crash switch and a fault injector.
 #[derive(Debug, Default)]
-pub struct FakeStore {
-    pub tables: Tables,
+pub(crate) struct FakeStore {
+    pub(crate) tables: Tables,
     snapshot: Option<Tables>,
     /// Statements executed so far.
-    pub statements: usize,
+    pub(crate) statements: usize,
     /// Fail with [`StoreError::Unavailable`] on this (1-based) statement.
-    pub fail_at: Option<usize>,
+    pub(crate) fail_at: Option<usize>,
     /// Row inserts executed.
-    pub inserts: usize,
+    pub(crate) inserts: usize,
     /// Identity-advance statements, as text.
-    pub advanced: Vec<String>,
+    pub(crate) advanced: Vec<String>,
 }
 
 impl FakeStore {
     /// Adds a committed row.
-    pub fn seed(&mut self, table: &str, cells: &[(&str, &str)]) {
+    pub(crate) fn seed(&mut self, table: &str, cells: &[(&str, &str)]) {
         let row = cells
             .iter()
             .map(|(column, value)| ((*column).to_owned(), value.as_bytes().to_vec()))
@@ -188,14 +188,14 @@ impl FakeStore {
     }
 
     /// Drops the open transaction, as a lost connection would.
-    pub fn crash(&mut self) {
+    pub(crate) fn crash(&mut self) {
         if let Some(saved) = self.snapshot.take() {
             self.tables = saved;
         }
     }
 
     /// Every table with rows sorted, for comparisons that ignore insert order.
-    pub fn dump(&self) -> Tables {
+    pub(crate) fn dump(&self) -> Tables {
         let mut tables = self.tables.clone();
         for rows in tables.values_mut() {
             rows.sort();
@@ -268,20 +268,24 @@ impl FakeStore {
         });
         if max {
             let top = matching
-                .filter_map(|row| std::str::from_utf8(row.get(&column)?).ok()?.parse::<u64>().ok())
+                .filter_map(|row| {
+                    std::str::from_utf8(row.get(&column)?)
+                        .ok()?
+                        .parse::<u64>()
+                        .ok()
+                })
                 .max();
             let cell = top.map_or(Cell::Null, |top| Cell::bytes(top.to_string()));
             return Some(Reply::single_column("max", [cell]));
         }
         let rows: Vec<Row> = matching
             .take(limit)
-            .map(|row| {
-                Row::new(vec![
-                    row.get(&column).map_or(Cell::Null, Cell::bytes),
-                ])
-            })
+            .map(|row| Row::new(vec![row.get(&column).map_or(Cell::Null, Cell::bytes)]))
             .collect();
-        Some(Reply::Rows(ResultSet::new(vec![Column::new(&column)], rows)))
+        Some(Reply::Rows(ResultSet::new(
+            vec![Column::new(&column)],
+            rows,
+        )))
     }
 
     fn insert(&mut self, cursor: &mut Cursor) -> Option<Reply> {
@@ -354,9 +358,9 @@ impl Store for FakeStore {
 
 /// A checkpoint held in memory.
 #[derive(Debug, Default)]
-pub struct MemoryCheckpoint {
-    pub records: Option<u64>,
-    pub fail: bool,
+pub(crate) struct MemoryCheckpoint {
+    pub(crate) records: Option<u64>,
+    pub(crate) fail: bool,
 }
 
 impl Checkpoint for MemoryCheckpoint {
@@ -375,9 +379,9 @@ impl Checkpoint for MemoryCheckpoint {
 
 /// Serves fixed bytes per URL.
 #[derive(Debug, Default)]
-pub struct MapFetcher {
-    pub files: BTreeMap<String, Vec<u8>>,
-    pub fetched: Vec<String>,
+pub(crate) struct MapFetcher {
+    pub(crate) files: BTreeMap<String, Vec<u8>>,
+    pub(crate) fetched: Vec<String>,
 }
 
 impl Fetcher for MapFetcher {
@@ -392,9 +396,9 @@ impl Fetcher for MapFetcher {
 
 /// Keeps uploaded objects in memory.
 #[derive(Debug, Default)]
-pub struct MemoryUploads {
-    pub objects: BTreeMap<String, Vec<u8>>,
-    pub fail: bool,
+pub(crate) struct MemoryUploads {
+    pub(crate) objects: BTreeMap<String, Vec<u8>>,
+    pub(crate) fail: bool,
 }
 
 impl UploadSink for MemoryUploads {
