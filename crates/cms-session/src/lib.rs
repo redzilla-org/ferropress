@@ -18,6 +18,7 @@
 
 mod cookie;
 mod error;
+mod login;
 mod mac;
 mod nonce;
 mod password;
@@ -27,6 +28,10 @@ mod token;
 
 pub use cookie::{CookiePath, NAME as COOKIE_NAME, read as read_cookie};
 pub use error::Error;
+pub use login::{
+    Limits, LoggedIn, Login, LoginRequest, Outcome, REMEMBER_SECONDS, Rejection, Resolved,
+    SESSION_SECONDS, can,
+};
 pub use nonce::{
     Age, LIFETIME as NONCE_LIFETIME, NonceKey, create as create_nonce, tick, verify as verify_nonce,
 };

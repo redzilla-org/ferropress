@@ -135,7 +135,10 @@ mod tests {
         assert_eq!(check(&nonce, "a", 3, NOW), Some(Age::Current));
         assert_eq!(check(&nonce, "a", 3, NOW + 1), Some(Age::Previous));
         // Made at the last second of its tick, it lives one more tick: half a lifetime.
-        assert_eq!(check(&nonce, "a", 3, NOW + LIFETIME / 2), Some(Age::Previous));
+        assert_eq!(
+            check(&nonce, "a", 3, NOW + LIFETIME / 2),
+            Some(Age::Previous)
+        );
         assert_eq!(check(&nonce, "a", 3, NOW + LIFETIME / 2 + 1), None);
         assert_eq!(check(&nonce, "b", 3, NOW), None);
         assert_eq!(check(&nonce, "a", 4, NOW), None);
