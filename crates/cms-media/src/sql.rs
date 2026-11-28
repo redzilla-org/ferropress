@@ -92,7 +92,7 @@ impl Statements<'_> {
     }
 
     /// The outbox row announcing the new attachment to the projector.
-    pub(crate) fn insert_outbox(&self, post_id: u64) -> Result<Sql, Error> {
+    pub(crate) fn insert_outbox(&self, post_id: u64) -> Sql {
         let d = self.dialect;
         let mut sql = b"INSERT INTO ".to_vec();
         sql.extend(d.ident(self.tables.outbox.as_bytes()));
@@ -109,12 +109,12 @@ impl Statements<'_> {
         sql.extend_from_slice(b") VALUES ('post', ");
         sql.extend_from_slice(post_id.to_string().as_bytes());
         sql.extend_from_slice(br#", 'insert', '{"post_type":"attachment"}')"#);
-        Ok(Sql::new(sql))
+        Sql::new(sql)
     }
 }
 
 fn literal(dialect: Dialect, bytes: &[u8]) -> Result<Vec<u8>, Error> {
-    dialect.literal(bytes).map_err(|_| Error::Literal)
+    dialect.literal(bytes).map_err(|_unquotable| Error::Literal)
 }
 
 // Integer columns hold decimal text the caller built; anything else is written as 0.
@@ -164,14 +164,14 @@ mod tests {
         draft.set(Field::Author, b"7").set(Field::Title, b"a");
         let insert = text(pg.insert_post(&draft));
         assert!(insert.starts_with(r#"INSERT INTO "fp_posts" ("post_author", "post_date""#));
-        assert!(insert.contains(r#"VALUES (7, '', '', '', '', 'a', "#));
+        assert!(insert.contains(r"VALUES (7, '', '', '', '', 'a', "));
         assert!(insert.ends_with(r#", 0, 0, '', '') RETURNING "ID""#));
         assert_eq!(
             text(pg.insert_meta(12, "_wp_attached_file", b"2026/11/a.jpg")),
             r#"INSERT INTO "fp_postmeta" ("post_id", "meta_key", "meta_value") VALUES (12, '_wp_attached_file', '2026/11/a.jpg')"#
         );
         assert_eq!(
-            text(pg.insert_outbox(12)),
+            text(Ok(pg.insert_outbox(12))),
             r#"INSERT INTO "fp_outbox" ("aggregate", "aggregate_id", "change", "payload") VALUES ('post', 12, 'insert', '{"post_type":"attachment"}')"#
         );
         assert_eq!(pg.insert_meta(1, "k", b"a\0b"), Err(Error::Literal));

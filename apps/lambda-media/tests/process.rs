@@ -31,7 +31,12 @@ impl Objects for Bucket {
     }
 
     fn list(&mut self, prefix: &str) -> Result<Vec<String>, PortError> {
-        Ok(self.0.keys().filter(|k| k.starts_with(prefix)).cloned().collect())
+        Ok(self
+            .0
+            .keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect())
     }
 }
 
@@ -39,6 +44,11 @@ impl Objects for Bucket {
 struct Db;
 
 impl Store for Db {
+    // Media rows land in DSQL, which speaks the Postgres dialect.
+    fn dialect(&self) -> Dialect {
+        Dialect::Postgres
+    }
+
     fn query(&mut self, sql: &Sql) -> Result<Reply, StoreError> {
         let text = sql.as_bytes();
         Ok(if text.starts_with(b"SELECT") {
@@ -74,7 +84,6 @@ fn s3_event_processes_each_record_once() {
     let Ok(prefix) = prefix else { return };
     let site = Site {
         prefix,
-        dialect: Dialect::Postgres,
         uploads_url: "https://example.com/blog/wp-content/uploads".into(),
         comment_status: "open".into(),
     };
@@ -87,16 +96,24 @@ fn s3_event_processes_each_record_once() {
     let first = process_invocation(event, &site, &clock, &mut bucket, &mut Db);
     assert_eq!(
         first.map(String::from_utf8),
-        Ok(Ok(format!(r#"{{"processed":[{{"id":40,"key":"{key}"}}]}}"#)))
+        Ok(Ok(format!(
+            r#"{{"processed":[{{"id":40,"key":"{key}"}}]}}"#
+        )))
     );
-    assert!(bucket.0.contains_key("site/uploads/2026/01/my pic-300x225.png"));
+    assert!(
+        bucket
+            .0
+            .contains_key("site/uploads/2026/01/my pic-300x225.png")
+    );
     assert!(!bucket.0.contains_key(key));
 
     // Redelivery after success is a no-op.
     let again = process_invocation(event, &site, &clock, &mut bucket, &mut Db);
     assert_eq!(
         again.map(String::from_utf8),
-        Ok(Ok(format!(r#"{{"processed":[{{"id":null,"key":"{key}"}}]}}"#)))
+        Ok(Ok(format!(
+            r#"{{"processed":[{{"id":null,"key":"{key}"}}]}}"#
+        )))
     );
 
     assert_eq!(

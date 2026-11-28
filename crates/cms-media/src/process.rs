@@ -3,7 +3,7 @@
 use std::io::Cursor;
 
 use cms_content::{Draft, Field};
-use cms_db::{Dialect, Reply, Sql, Store, TablePrefix, TableStem};
+use cms_db::{Reply, Sql, Store, TablePrefix, TableStem};
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView};
@@ -24,8 +24,6 @@ const JPEG_QUALITY: u8 = 82;
 pub struct Site {
     /// Table prefix (`fp_`).
     pub prefix: TablePrefix,
-    /// The store's SQL spelling.
-    pub dialect: Dialect,
     /// Public uploads URL without a trailing slash (`https://example.com/blog/wp-content/uploads`).
     pub uploads_url: String,
     /// `default_comment_status` for new attachments (`open` by default).
@@ -139,7 +137,7 @@ fn decode(bytes: &[u8], kind: ImageKind) -> Result<DynamicImage, Error> {
         _ => return Err(Error::Decode(kind.label())),
     }
     image::load_from_memory_with_format(bytes, kind.format())
-        .map_err(|_| Error::Decode(kind.label()))
+        .map_err(|_undecodable| Error::Decode(kind.label()))
 }
 
 // `YYYY/MM` from `YYYY-MM-DD hh:mm:ss`.
@@ -269,7 +267,7 @@ fn tables(prefix: &TablePrefix) -> Result<Tables, Error> {
     let table = |stem: &str| {
         TableStem::new(stem)
             .map(|stem| prefix.table(&stem))
-            .map_err(|_| Error::Literal)
+            .map_err(|_invalid| Error::Literal)
     };
     Ok(Tables {
         posts: table("posts")?,
@@ -288,7 +286,8 @@ fn commit(
 ) -> Result<u64, Error> {
     let tables = tables(&site.prefix)?;
     let statements = Statements {
-        dialect: site.dialect,
+        // The adapter chosen at the composition root decides the spelling.
+        dialect: store.dialect(),
         tables: &tables,
     };
     run(store, &Sql::from("BEGIN"))?;
@@ -311,7 +310,7 @@ fn commit(
             .set(Field::MenuOrder, b"0")
             .set(Field::MimeType, row.mime)
             .set(Field::Guid, &row.guid);
-        let id = inserted_id(run(store, &statements.insert_post(&draft)?)?)?;
+        let id = inserted_id(&run(store, &statements.insert_post(&draft)?)?)?;
         run(
             store,
             &statements.insert_meta(id, "_wp_attached_file", metadata.file.as_bytes())?,
@@ -320,7 +319,7 @@ fn commit(
             store,
             &statements.insert_meta(id, "_wp_attachment_metadata", &metadata.serialize())?,
         )?;
-        run(store, &statements.insert_outbox(id)?)?;
+        run(store, &statements.insert_outbox(id))?;
         run(store, &Sql::from("COMMIT"))?;
         Ok(id)
     })();
@@ -361,8 +360,8 @@ fn run(store: &mut impl Store, sql: &Sql) -> Result<Reply, Error> {
 }
 
 // `RETURNING "ID"` arrives as one row; the `MySQL` adapter reports `insert_id`.
-fn inserted_id(reply: Reply) -> Result<u64, Error> {
-    let id = match &reply {
+fn inserted_id(reply: &Reply) -> Result<u64, Error> {
+    let id = match reply {
         Reply::Done { insert_id, .. } => Some(*insert_id),
         Reply::Rows(set) => set
             .rows()
@@ -376,7 +375,7 @@ fn inserted_id(reply: Reply) -> Result<u64, Error> {
     };
     match id {
         Some(id) if id > 0 => Ok(id),
-        _ => Err(unexpected(&reply)),
+        _ => Err(unexpected(reply)),
     }
 }
 
@@ -424,25 +423,25 @@ mod tests {
     #[test]
     fn insert_ids_come_from_either_reply_shape() {
         assert_eq!(
-            inserted_id(Reply::Done {
+            inserted_id(&Reply::Done {
                 affected: 1,
                 insert_id: 9
             }),
             Ok(9)
         );
         assert_eq!(
-            inserted_id(Reply::single_column("ID", [Cell::bytes("12")])),
+            inserted_id(&Reply::single_column("ID", [Cell::bytes("12")])),
             Ok(12)
         );
         assert!(
-            inserted_id(Reply::Done {
+            inserted_id(&Reply::Done {
                 affected: 1,
                 insert_id: 0
             })
             .is_err()
         );
-        assert!(inserted_id(Reply::single_column("ID", [Cell::Null])).is_err());
-        assert!(inserted_id(Reply::single_column("ID", [])).is_err());
-        assert!(inserted_id(Reply::single_column("ID", [Cell::bytes("x")])).is_err());
+        assert!(inserted_id(&Reply::single_column("ID", [Cell::Null])).is_err());
+        assert!(inserted_id(&Reply::single_column("ID", [])).is_err());
+        assert!(inserted_id(&Reply::single_column("ID", [Cell::bytes("x")])).is_err());
     }
 }

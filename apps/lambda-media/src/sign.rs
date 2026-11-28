@@ -19,7 +19,9 @@ pub fn sign_invocation(
     let Ok(event) = serde_json::from_slice::<Value>(payload) else {
         return reply(400, &message("invalid request"));
     };
-    let method = event.pointer("/requestContext/http/method").and_then(Value::as_str);
+    let method = event
+        .pointer("/requestContext/http/method")
+        .and_then(Value::as_str);
     if method != Some("POST") {
         return reply(405, &message("method not allowed"));
     }
@@ -158,7 +160,10 @@ mod tests {
         assert_eq!(status, 200);
         let key = "site/incoming/00000000-0000-4000-8000-000000000000/a-b.png";
         assert_eq!(reply["key"], key);
-        assert_eq!(reply["url"], format!("https://bucket.example.com/{key}?sig"));
+        assert_eq!(
+            reply["url"],
+            format!("https://bucket.example.com/{key}?sig")
+        );
         assert_eq!(
             reply["headers"],
             json!({ "content-length": "10", "content-type": "image/png", "x-amz-meta-fp-author": "5" })
@@ -169,11 +174,17 @@ mod tests {
     fn maps_refusals_to_statuses() {
         let png = json!({ "filename": "a.png", "type": "image/png", "size": 10 });
         assert_eq!(call(&event("nobody", &png)).0, 403);
-        assert_eq!(call(&event("broken", &png)), (500, json!({ "message": "upload signing failed" })));
+        assert_eq!(
+            call(&event("broken", &png)),
+            (500, json!({ "message": "upload signing failed" }))
+        );
         let pdf = json!({ "filename": "a.pdf", "type": "application/pdf", "size": 10 });
         assert_eq!(
             call(&event("good", &pdf)),
-            (400, json!({ "message": "Sorry, you are not allowed to upload this file type." }))
+            (
+                400,
+                json!({ "message": "Sorry, you are not allowed to upload this file type." })
+            )
         );
         assert_eq!(call(&event("good", &json!({ "filename": "a.png" }))).0, 400);
         let mut get = event("good", &png);

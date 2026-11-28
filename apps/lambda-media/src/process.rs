@@ -58,8 +58,8 @@ pub fn process_invocation(
     let keys = incoming_keys(payload).map_err(|error| error.to_string())?;
     let mut done = Vec::with_capacity(keys.len());
     for key in keys {
-        let processed =
-            process(&key, site, clock, objects, store).map_err(|error| format!("{key}: {error}"))?;
+        let processed = process(&key, site, clock, objects, store)
+            .map_err(|error| format!("{key}: {error}"))?;
         done.push(json!({ "key": key, "id": processed.map(|p| p.id) }));
     }
     Ok(json!({ "processed": done }).to_string().into_bytes())
@@ -96,7 +96,10 @@ mod tests {
         assert_eq!(url_decode("%zz"), None);
         assert_eq!(url_decode("%ff"), None);
         let event = br#"{"Records":[{"s3":{"object":{"key":"site/incoming/u/a+b.png"}}}]}"#;
-        assert_eq!(incoming_keys(event), Ok(vec!["site/incoming/u/a b.png".to_owned()]));
+        assert_eq!(
+            incoming_keys(event),
+            Ok(vec!["site/incoming/u/a b.png".to_owned()])
+        );
     }
 
     #[test]

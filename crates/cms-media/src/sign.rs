@@ -187,13 +187,13 @@ mod tests {
 
     #[test]
     fn grants_a_sanitized_key_with_signed_headers() {
-        let signer = Signer::default();
+        let presigner = Signer::default();
         let signed = sign(
             &request("My Photo.JPG", "image/jpeg", 500),
             POLICY,
             [0; 16],
             &mut Sessions(Ok(Some(7))),
-            &signer,
+            &presigner,
         );
         let key = "site/incoming/00000000-0000-4000-8000-000000000000/My-Photo.jpg";
         assert_eq!(signed.as_ref().map(|s| s.key.as_str()), Ok(key));
@@ -211,7 +211,7 @@ mod tests {
             ])
         );
         assert_eq!(
-            signer.seen.borrow().as_slice(),
+            presigner.seen.borrow().as_slice(),
             [format!(
                 "{key} content-length;content-type;x-amz-meta-fp-author 300"
             )]
@@ -220,10 +220,10 @@ mod tests {
 
     #[test]
     fn refuses_anonymous_oversized_and_foreign_files() {
-        let signer = Signer::default();
+        let presigner = Signer::default();
         let mut ok = Sessions(Ok(Some(1)));
         let refuse = |r: &SignRequest<'_>, s: &mut Sessions| {
-            sign(r, POLICY, [1; 16], s, &signer).map(|signed| signed.key)
+            sign(r, POLICY, [1; 16], s, &presigner).map(|signed| signed.key)
         };
         assert_eq!(
             refuse(&request("a.jpg", "image/jpeg", 1), &mut Sessions(Ok(None))),
@@ -259,7 +259,7 @@ mod tests {
             refuse(&request("***", "image/png", 5), &mut ok),
             Err(Error::Name)
         );
-        assert!(signer.seen.borrow().is_empty());
+        assert!(presigner.seen.borrow().is_empty());
         let failing = Signer {
             fail: true,
             ..Signer::default()

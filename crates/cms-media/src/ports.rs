@@ -2,7 +2,7 @@
 
 use crate::PortError;
 
-/// Issues presigned S3 PUT URLs (SigV4 query signing, `infra-aws`).
+/// Issues presigned S3 PUT URLs (`SigV4` query signing, `infra-aws`).
 pub trait Presigner {
     /// A URL that lets its holder PUT `key` for `expires_secs`, with `headers` (lower-case
     /// names) signed so the upload must send exactly those values.

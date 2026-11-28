@@ -91,6 +91,11 @@ struct Db {
 }
 
 impl Store for Db {
+    // Media rows land in DSQL, which speaks the Postgres dialect.
+    fn dialect(&self) -> Dialect {
+        Dialect::Postgres
+    }
+
     fn query(&mut self, sql: &Sql) -> Result<Reply, StoreError> {
         if self.down {
             return Err(StoreError::Unavailable);
@@ -125,7 +130,6 @@ impl Store for Db {
 fn site() -> Option<Site> {
     Some(Site {
         prefix: TablePrefix::new("fp_").ok()?,
-        dialect: Dialect::Postgres,
         uploads_url: "https://example.com/blog/wp-content/uploads".into(),
         comment_status: "open".into(),
     })
@@ -157,7 +161,8 @@ fn sizes(meta: &Metadata) -> Vec<(&str, &str, u32, u32)> {
 #[test]
 fn big_jpeg_is_scaled_and_gets_every_sub_size() {
     let key = incoming("photo.jpg");
-    let mut bucket = Bucket::default().with(&key, fixture(2600, 100, ImageFormat::Jpeg), Some("7"));
+    let mut bucket =
+        Bucket::default().with(&key, fixture(4000, 3000, ImageFormat::Jpeg), Some("7"));
     let mut db = Db::default();
     let done = run(&key, &mut bucket, &mut db);
     assert!(matches!(done, Ok(Some(_))), "{done:?}");
@@ -167,33 +172,33 @@ fn big_jpeg_is_scaled_and_gets_every_sub_size() {
     let files = [
         "photo.jpg",
         "photo-scaled.jpg",
-        "photo-300x12.jpg",
-        "photo-1024x39.jpg",
-        "photo-150x100.jpg",
-        "photo-768x30.jpg",
-        "photo-1536x59.jpg",
-        "photo-2048x79.jpg",
+        "photo-300x225.jpg",
+        "photo-1024x768.jpg",
+        "photo-150x150.jpg",
+        "photo-768x576.jpg",
+        "photo-1536x1152.jpg",
+        "photo-2048x1536.jpg",
     ];
     assert_eq!(done.keys, files.map(|file| format!("{dir}{file}")).to_vec());
     assert_eq!(done.id, 12);
     assert_eq!(done.attached_file, "2026/11/photo-scaled.jpg");
     let meta = &done.metadata;
-    assert_eq!((meta.width, meta.height), (2560, 98));
+    assert_eq!((meta.width, meta.height), (2560, 1920));
     assert_eq!(meta.file, "2026/11/photo-scaled.jpg");
     assert_eq!(meta.original_image.as_deref(), Some("photo.jpg"));
     assert_eq!(
         bucket.size_of(&format!("{dir}photo-scaled.jpg")),
-        Some((2560, 98, meta.filesize))
+        Some((2560, 1920, meta.filesize))
     );
     assert_eq!(
         sizes(meta),
         [
-            ("medium", "photo-300x12.jpg", 300, 12),
-            ("large", "photo-1024x39.jpg", 1024, 39),
-            ("thumbnail", "photo-150x100.jpg", 150, 100),
-            ("medium_large", "photo-768x30.jpg", 768, 30),
-            ("1536x1536", "photo-1536x59.jpg", 1536, 59),
-            ("2048x2048", "photo-2048x79.jpg", 2048, 79),
+            ("medium", "photo-300x225.jpg", 300, 225),
+            ("large", "photo-1024x768.jpg", 1024, 768),
+            ("thumbnail", "photo-150x150.jpg", 150, 150),
+            ("medium_large", "photo-768x576.jpg", 768, 576),
+            ("1536x1536", "photo-1536x1152.jpg", 1536, 1152),
+            ("2048x2048", "photo-2048x1536.jpg", 2048, 1536),
         ]
     );
     // Every recorded size matches the stored file's real dimensions and byte count.
@@ -206,14 +211,14 @@ fn big_jpeg_is_scaled_and_gets_every_sub_size() {
         );
         assert_eq!(size.mime, "image/jpeg");
     }
-    assert_eq!(bucket.deleted, [key.clone()]);
+    assert_eq!(bucket.deleted, std::slice::from_ref(&key));
     assert!(!bucket.objects.contains_key(&key));
 
     let serialized = String::from_utf8_lossy(&meta.serialize()).into_owned();
     assert!(serialized.starts_with(
-        r#"a:7:{s:5:"width";i:2560;s:6:"height";i:98;s:4:"file";s:24:"2026/11/photo-scaled.jpg";"#
+        r#"a:7:{s:5:"width";i:2560;s:6:"height";i:1920;s:4:"file";s:24:"2026/11/photo-scaled.jpg";"#
     ));
-    assert!(serialized.contains(r#"s:6:"medium";a:5:{s:4:"file";s:16:"photo-300x12.jpg";s:5:"width";i:300;s:6:"height";i:12;s:9:"mime-type";s:10:"image/jpeg";"#));
+    assert!(serialized.contains(r#"s:6:"medium";a:5:{s:4:"file";s:17:"photo-300x225.jpg";s:5:"width";i:300;s:6:"height";i:225;s:9:"mime-type";s:10:"image/jpeg";"#));
     assert!(serialized.ends_with(r#"s:14:"original_image";s:9:"photo.jpg";}"#));
 
     assert_eq!(db.seen.len(), 7);

@@ -1,5 +1,7 @@
 //! Upload file names: the reference's sanitizing, sub-size naming and uniqueness rules.
 
+use std::fmt::Write as _;
+
 use crate::Error;
 
 // Characters the reference strips from upload names before anything else.
@@ -130,7 +132,7 @@ pub fn sanitize_slug(title: &str) -> String {
             c if !c.is_ascii() => {
                 let mut buffer = [0_u8; 4];
                 for byte in c.encode_utf8(&mut buffer).bytes() {
-                    out.push_str(&format!("%{byte:02x}"));
+                    let _ = write!(out, "%{byte:02x}");
                 }
             }
             _ => {}
@@ -265,7 +267,7 @@ fn latin1(c: char) -> Option<&'static str> {
 
 // Latin Extended-A alternates upper/lower case pairs; the letter depends on the code range.
 fn extended_a(code: u32) -> Option<&'static str> {
-    let upper = code % 2 == 0;
+    let upper = code.is_multiple_of(2);
     let pair = |up: &'static str, low: &'static str| Some(if upper { up } else { low });
     match code {
         0x100..=0x105 => pair("A", "a"),
