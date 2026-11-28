@@ -19,6 +19,11 @@ add a prefix, or invent a different query. The reply is one of:
 - **failed**: a server-reported error (numeric code and message). This is a plugin-observable
   outcome, not a Rust `Err`.
 
+A store also reports its **dialect**: `MySql` (the reference spelling, `infra-mysql`) or
+`Postgres` (the serverless profile, ADR-0010). Callers build statements in that dialect. On
+`Postgres` an insert returns its id through `RETURNING`; the adapter reports that row as **done**
+with the returned id as the insert id.
+
 A Rust `Err` means the adapter could not reach a server or the connection is unusable. A syntax
 error, a missing table or a duplicate key is `failed`, not `Err`.
 
@@ -31,5 +36,5 @@ supplies it.
 
 ## Not bound yet
 
-Placeholders and escaping, SQL filters, transactions, multiple result sets, typed cells, and the
+Placeholders, SQL filters, transactions, multiple result sets, typed cells, and the
 PHP-visible database object.

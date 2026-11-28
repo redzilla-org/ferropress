@@ -25,7 +25,6 @@ mod error;
 mod id;
 mod key;
 mod meta;
-mod quote;
 mod row;
 mod sql;
 mod write;
