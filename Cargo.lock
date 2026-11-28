@@ -430,6 +430,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cms-render"
+version = "0.0.0"
+dependencies = [
+ "cms-readmodel",
+ "thiserror",
+]
+
+[[package]]
 name = "cms-request"
 version = "0.0.0"
 dependencies = [

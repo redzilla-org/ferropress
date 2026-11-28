@@ -220,10 +220,10 @@ not render when read; Phase 5 evaluates whether a stream can replace the nudge-a
 The outbox stays either way, because it carries domain intent ("post 12 published"), not row
 images.
 
-Rendering theme output needs roadmap steps 24–25 (themes, blocks, formatting). Until those
-land, the projector produces what is native core and needs no theme: feeds, sitemaps, robots,
-redirects and the post doc JSON. HTML pages follow when the renderer exists. Nothing serves
-placeholder HTML.
+PHP themes are not executed in this profile (ADR-0011). Pages, feeds, sitemaps and robots are
+rendered by the native built-in theme `cms-render`, whose pure renderers turn view models into a
+shared shell plus per-route fragments; `cms_readmodel::assemble` composes them. Listing-card
+markers resolve through its `CardSource` port. Nothing serves placeholder HTML.
 
 ## 6. Edge
 
