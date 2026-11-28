@@ -832,6 +832,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "infra-aws"
+version = "0.0.0"
+dependencies = [
+ "cms-readmodel",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+ "ureq",
+]
+
+[[package]]
 name = "infra-dsql"
 version = "0.0.0"
 dependencies = [
@@ -897,6 +908,7 @@ name = "lambda-read"
 version = "0.0.0"
 dependencies = [
  "cms-readmodel",
+ "infra-aws",
  "serde_json",
  "thiserror",
  "ureq",
@@ -1729,8 +1741,11 @@ dependencies = [
  "base64 0.23.1",
  "log",
  "percent-encoding",
+ "rustls",
+ "rustls-pki-types",
  "ureq-proto",
  "utf8-zero",
+ "webpki-roots",
 ]
 
 [[package]]
