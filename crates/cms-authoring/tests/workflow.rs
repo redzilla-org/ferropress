@@ -124,16 +124,18 @@ impl Repo for Memory {
         except: Option<PostId>,
     ) -> Result<bool, Error> {
         self.step("slug_taken")?;
-        Ok(self.state.posts.iter().any(|row| {
-            row.name == slug && row.type_name == type_name && Some(row.id) != except
-        }))
+        Ok(self
+            .state
+            .posts
+            .iter()
+            .any(|row| row.name == slug && row.type_name == type_name && Some(row.id) != except))
     }
 
     fn insert_post(&mut self, write: &PostWrite) -> Result<PostId, Error> {
         self.step("insert_post")?;
         self.state.next_post += 1;
-        let id = PostId::new(self.state.next_post)
-            .map_err(|_zero| Error::Rejected("zero id".into()))?;
+        let id =
+            PostId::new(self.state.next_post).map_err(|_zero| Error::Rejected("zero id".into()))?;
         let mut row = PostRow {
             id,
             author: write.author,
@@ -368,7 +370,13 @@ fn site() -> Site {
     }
 }
 
-fn request(method: Method, path: &str, token: &str, headers: &[(&str, &str)], body: &str) -> Request {
+fn request(
+    method: Method,
+    path: &str,
+    token: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> Request {
     Request {
         method,
         path: path.into(),
@@ -410,9 +418,19 @@ fn an_editor_creates_edits_previews_and_publishes() {
     let created = send(
         &mut repo,
         &mut nudges,
-        &rest(Method::Post, "/blog/api/posts", "editor-token", r#"{"title":"Hello World","content":"<p>Hi there</p>","tags":[]}"#),
+        &rest(
+            Method::Post,
+            "/blog/api/posts",
+            "editor-token",
+            r#"{"title":"Hello World","content":"<p>Hi there</p>","tags":[]}"#,
+        ),
     );
-    assert_eq!(created.status, 201, "{:?}", String::from_utf8_lossy(&created.body));
+    assert_eq!(
+        created.status,
+        201,
+        "{:?}",
+        String::from_utf8_lossy(&created.body)
+    );
     assert_eq!(repo.state.posts.len(), 1);
     assert_eq!(repo.state.posts[0].status, "draft");
     assert_eq!(repo.state.posts[0].name, "");
@@ -422,7 +440,12 @@ fn an_editor_creates_edits_previews_and_publishes() {
     let edited = send(
         &mut repo,
         &mut nudges,
-        &rest(Method::Put, "/blog/api/posts/1", "editor-token", r#"{"title":"Hello Again"}"#),
+        &rest(
+            Method::Put,
+            "/blog/api/posts/1",
+            "editor-token",
+            r#"{"title":"Hello Again"}"#,
+        ),
     );
     assert_eq!(edited.status, 200);
     assert_eq!(repo.state.posts[0].title, "Hello Again");
@@ -431,7 +454,13 @@ fn an_editor_creates_edits_previews_and_publishes() {
     let preview = send(
         &mut repo,
         &mut nudges,
-        &request(Method::Get, "/blog/admin/preview/1", "editor-token", &[], ""),
+        &request(
+            Method::Get,
+            "/blog/admin/preview/1",
+            "editor-token",
+            &[],
+            "",
+        ),
     );
     assert_eq!(preview.status, 200);
     assert_eq!(preview.header("cache-control"), Some("no-store"));
@@ -455,7 +484,10 @@ fn an_editor_creates_edits_previews_and_publishes() {
         Some("/blog/admin/posts/1/edit?message=published")
     );
     let row = &repo.state.posts[0];
-    assert_eq!((row.status.as_str(), row.name.as_str()), ("publish", "hello-again"));
+    assert_eq!(
+        (row.status.as_str(), row.name.as_str()),
+        ("publish", "hello-again")
+    );
     assert_eq!(row.date_gmt, "2026-11-27 12:00:00");
 
     assert_eq!(
@@ -464,18 +496,32 @@ fn an_editor_creates_edits_previews_and_publishes() {
     );
     let event = repo.state.outbox[2].to_event();
     assert_eq!(event.change(), cms_outbox::Change::Saved);
-    assert_eq!(event.payload().get("action").and_then(|v| v.as_str()), Some("published"));
-    assert_eq!(event.payload().get("slug").and_then(|v| v.as_str()), Some("hello-again"));
+    assert_eq!(
+        event.payload().get("action").and_then(|v| v.as_str()),
+        Some("published")
+    );
+    assert_eq!(
+        event.payload().get("slug").and_then(|v| v.as_str()),
+        Some("hello-again")
+    );
     assert_eq!(nudges.0, 3);
     // Each write was one transaction: three begins, three commits, no rollback.
     let count = |op: &str| repo.log.iter().filter(|logged| **logged == op).count();
-    assert_eq!((count("begin"), count("commit"), count("rollback")), (3, 3, 0));
+    assert_eq!(
+        (count("begin"), count("commit"), count("rollback")),
+        (3, 3, 0)
+    );
 
     // A second post with the same title takes a numeric suffix.
     let twin = send(
         &mut repo,
         &mut nudges,
-        &rest(Method::Post, "/blog/api/posts", "editor-token", r#"{"title":"Hello Again","status":"publish"}"#),
+        &rest(
+            Method::Post,
+            "/blog/api/posts",
+            "editor-token",
+            r#"{"title":"Hello Again","status":"publish"}"#,
+        ),
     );
     assert_eq!(twin.status, 201);
     assert_eq!(repo.state.posts[1].name, "hello-again-2");
@@ -484,7 +530,12 @@ fn an_editor_creates_edits_previews_and_publishes() {
     let renamed = send(
         &mut repo,
         &mut nudges,
-        &rest(Method::Put, "/blog/api/posts/1", "editor-token", r#"{"slug":"Hello Renamed"}"#),
+        &rest(
+            Method::Put,
+            "/blog/api/posts/1",
+            "editor-token",
+            r#"{"slug":"Hello Renamed"}"#,
+        ),
     );
     assert_eq!(renamed.status, 200);
     assert_eq!(repo.state.posts[0].name, "hello-renamed");
@@ -494,7 +545,9 @@ fn an_editor_creates_edits_previews_and_publishes() {
     );
     let last = repo.state.outbox.last().map(OutboxEvent::to_event);
     assert_eq!(
-        last.as_ref().and_then(|e| e.payload().get("old_slug")).and_then(|v| v.as_str()),
+        last.as_ref()
+            .and_then(|e| e.payload().get("old_slug"))
+            .and_then(|v| v.as_str()),
         Some("hello-again")
     );
 
@@ -502,7 +555,13 @@ fn an_editor_creates_edits_previews_and_publishes() {
     let unpublished = send(
         &mut repo,
         &mut nudges,
-        &request(Method::Post, "/blog/admin/posts/1", "editor-token", &[], "_fpnonce=editor-token.fp_admin&do=unpublish"),
+        &request(
+            Method::Post,
+            "/blog/admin/posts/1",
+            "editor-token",
+            &[],
+            "_fpnonce=editor-token.fp_admin&do=unpublish",
+        ),
     );
     assert_eq!(unpublished.status, 303);
     assert_eq!(repo.state.posts[0].status, "draft");
@@ -515,12 +574,14 @@ fn an_editor_creates_edits_previews_and_publishes() {
     assert_eq!(repo.state.posts[0].status, "trash");
     assert_eq!(
         repo.changes()[3..],
-        [Change::Published, Change::Updated, Change::Unpublished, Change::Trashed]
+        [
+            Change::Published,
+            Change::Updated,
+            Change::Unpublished,
+            Change::Trashed
+        ]
     );
-    assert_eq!(
-        repo.changes()[5..],
-        [Change::Unpublished, Change::Trashed]
-    );
+    assert_eq!(repo.changes()[5..], [Change::Unpublished, Change::Trashed]);
     assert_eq!(nudges.0, 7);
 
     // The list shows the remaining post.
@@ -541,7 +602,12 @@ fn a_contributor_cannot_publish_and_nothing_is_written() {
     let refused = send(
         &mut repo,
         &mut nudges,
-        &rest(Method::Post, "/blog/api/posts", "contrib-token", r#"{"title":"Mine","status":"publish"}"#),
+        &rest(
+            Method::Post,
+            "/blog/api/posts",
+            "contrib-token",
+            r#"{"title":"Mine","status":"publish"}"#,
+        ),
     );
     assert_eq!(refused.status, 403);
     assert!(repo.state.posts.is_empty() && repo.state.outbox.is_empty());
@@ -552,14 +618,24 @@ fn a_contributor_cannot_publish_and_nothing_is_written() {
     let draft = send(
         &mut repo,
         &mut nudges,
-        &rest(Method::Post, "/blog/api/posts", "contrib-token", r#"{"title":"Mine"}"#),
+        &rest(
+            Method::Post,
+            "/blog/api/posts",
+            "contrib-token",
+            r#"{"title":"Mine"}"#,
+        ),
     );
     assert_eq!(draft.status, 201);
     let before = repo.state.outbox.len();
     let publish = send(
         &mut repo,
         &mut nudges,
-        &rest(Method::Put, "/blog/api/posts/1", "contrib-token", r#"{"status":"publish"}"#),
+        &rest(
+            Method::Put,
+            "/blog/api/posts/1",
+            "contrib-token",
+            r#"{"status":"publish"}"#,
+        ),
     );
     assert_eq!(publish.status, 403);
     assert_eq!(repo.state.posts[0].status, "draft");
@@ -587,7 +663,13 @@ fn a_bad_or_missing_nonce_is_rejected_before_any_write() {
         &[("x-fp-nonce", "editor-token.fp_admin")],
         body,
     );
-    let form = request(Method::Post, "/blog/admin/posts", "editor-token", &[], "do=draft&title=X");
+    let form = request(
+        Method::Post,
+        "/blog/admin/posts",
+        "editor-token",
+        &[],
+        "do=draft&title=X",
+    );
     for refused in [missing, wrong, other_action, form] {
         let response = send(&mut repo, &mut nudges, &refused);
         assert_eq!(response.status, 403, "{}", refused.path);
@@ -625,7 +707,12 @@ fn a_failed_statement_rolls_back_without_a_nudge() {
         let response = send(
             &mut repo,
             &mut nudges,
-            &rest(Method::Post, "/blog/api/posts", "editor-token", r#"{"title":"T","categories":[1],"status":"publish"}"#),
+            &rest(
+                Method::Post,
+                "/blog/api/posts",
+                "editor-token",
+                r#"{"title":"T","categories":[1],"status":"publish"}"#,
+            ),
         );
         assert_eq!(response.status, 500, "{failing}");
         assert!(repo.state.posts.is_empty(), "{failing}");
@@ -643,14 +730,30 @@ fn editor_workflows_check_capabilities_per_post() {
     let created = send(
         &mut repo,
         &mut nudges,
-        &rest(Method::Post, "/blog/api/posts", "editor-token", r#"{"title":"Theirs","status":"publish"}"#),
+        &rest(
+            Method::Post,
+            "/blog/api/posts",
+            "editor-token",
+            r#"{"title":"Theirs","status":"publish"}"#,
+        ),
     );
     assert_eq!(created.status, 201);
     let writes = repo.state.outbox.len();
     for refused in [
-        rest(Method::Put, "/blog/api/posts/1", "contrib-token", r#"{"title":"Mine now"}"#),
+        rest(
+            Method::Put,
+            "/blog/api/posts/1",
+            "contrib-token",
+            r#"{"title":"Mine now"}"#,
+        ),
         rest(Method::Delete, "/blog/api/posts/1", "contrib-token", ""),
-        request(Method::Get, "/blog/admin/posts/1/edit", "contrib-token", &[], ""),
+        request(
+            Method::Get,
+            "/blog/admin/posts/1/edit",
+            "contrib-token",
+            &[],
+            "",
+        ),
     ] {
         let response = send(&mut repo, &mut nudges, &refused);
         assert_eq!(response.status, 403, "{}", refused.path);

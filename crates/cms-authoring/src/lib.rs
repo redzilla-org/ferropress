@@ -22,10 +22,10 @@ pub use date::format as format_date;
 pub use editor::{Editor, PER_PAGE, Page, PostInput, Saved, Site, Tags, delete_caps, edit_caps};
 pub use error::Error;
 pub use http::{Method, Request, Response};
-pub use router::{ADMIN_ACTION, Ports, REST_ACTION, SESSION_COOKIE, handle};
 pub use model::{
     Change, OutboxEvent, PostRow, PostWrite, Status, StatusFilter, TermRow, ZERO_DATE,
 };
 pub use ports::{CapsPermissions, Clock, Permissions, Projector, Sessions};
 pub use repo::{Repo, SqlRepo};
+pub use router::{ADMIN_ACTION, Ports, REST_ACTION, SESSION_COOKIE, handle};
 pub use slug::{sanitize as sanitize_slug, unique as unique_slug};

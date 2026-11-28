@@ -291,7 +291,10 @@ impl<'a> Editor<'a> {
         let local = self.site.local(now);
         let gmt = format(now);
         let keep = |given: &Option<String>, stored: Option<&String>| {
-            given.clone().or_else(|| stored.cloned()).unwrap_or_default()
+            given
+                .clone()
+                .or_else(|| stored.cloned())
+                .unwrap_or_default()
         };
         let title = keep(&input.title, before.map(|row| &row.title));
         let (date, date_gmt) = match before {
@@ -341,7 +344,12 @@ impl<'a> Editor<'a> {
             self.repo.set_guid(id, &guid)?;
             // An untitled published post takes its id as slug, as the reference's fallback.
             if row.name.is_empty() && row.status == Status::Publish {
-                row.name = unique(&mut *self.repo, &id.as_u64().to_string(), row.status, Some(id))?;
+                row.name = unique(
+                    &mut *self.repo,
+                    &id.as_u64().to_string(),
+                    row.status,
+                    Some(id),
+                )?;
                 self.repo.update_post(id, &row)?;
             }
             id
@@ -373,8 +381,7 @@ impl<'a> Editor<'a> {
             self.repo.add_meta(id, "_wp_old_slug", &before.name)?;
         }
         if old.contains(&row.name) {
-            self.repo
-                .delete_meta(id, "_wp_old_slug", Some(&row.name))?;
+            self.repo.delete_meta(id, "_wp_old_slug", Some(&row.name))?;
         }
         Ok(())
     }

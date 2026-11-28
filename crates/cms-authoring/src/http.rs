@@ -122,7 +122,7 @@ impl Response {
 
 /// `application/x-www-form-urlencoded` pairs (also query strings), in order.
 #[must_use]
-pub fn form(bytes: &[u8]) -> Vec<(String, String)> {
+pub(crate) fn form(bytes: &[u8]) -> Vec<(String, String)> {
     bytes
         .split(|&byte| byte == b'&')
         .filter(|pair| !pair.is_empty())
@@ -137,7 +137,7 @@ pub fn form(bytes: &[u8]) -> Vec<(String, String)> {
 
 /// The first value of `name` in `pairs`.
 #[must_use]
-pub fn field<'p>(pairs: &'p [(String, String)], name: &str) -> Option<&'p str> {
+pub(crate) fn field<'p>(pairs: &'p [(String, String)], name: &str) -> Option<&'p str> {
     pairs
         .iter()
         .find(|(key, _)| key == name)
@@ -146,7 +146,7 @@ pub fn field<'p>(pairs: &'p [(String, String)], name: &str) -> Option<&'p str> {
 
 /// Percent-encodes `text` for a query value.
 #[must_use]
-pub fn encode(text: &str) -> String {
+pub(crate) fn encode(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for byte in text.bytes() {
         if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {

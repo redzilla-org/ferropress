@@ -55,6 +55,14 @@ pub fn handle(site: &Site, ports: Ports<'_>, request: &Request) -> Response {
 }
 
 fn route(site: &Site, ports: Ports<'_>, request: &Request) -> Response {
+    let Ports {
+        repo,
+        sessions,
+        permissions,
+        projector,
+        clock,
+        cards,
+    } = ports;
     let Some(rest) = request.path.strip_prefix(&*site.theme.base) else {
         return Response::new(404, JSON, Vec::new());
     };
@@ -82,7 +90,7 @@ fn route(site: &Site, ports: Ports<'_>, request: &Request) -> Response {
     let user = if token.is_empty() {
         Ok(None)
     } else {
-        ports.sessions.user(token)
+        sessions.user(token)
     };
     let user = match user {
         Ok(Some(user)) => user,
@@ -90,7 +98,11 @@ fn route(site: &Site, ports: Ports<'_>, request: &Request) -> Response {
             return json_message(401, "fp_not_logged_in", "You are not logged in.");
         }
         Ok(None) => {
-            let target = format!("{}login?redirect_to={}", site.theme.base, encode(&request.path));
+            let target = format!(
+                "{}login?redirect_to={}",
+                site.theme.base,
+                encode(&request.path)
+            );
             return Response::redirect(302, &target);
         }
         Err(error) => return fail(&error),
@@ -103,18 +115,12 @@ fn route(site: &Site, ports: Ports<'_>, request: &Request) -> Response {
         } else {
             (ADMIN_ACTION, field(&pairs, "_fpnonce"))
         };
-        if !nonce.is_some_and(|nonce| ports.sessions.verify(token, action, nonce)) {
+        if !nonce.is_some_and(|nonce| sessions.verify(token, action, nonce)) {
             return fail(&Error::Forbidden("a valid nonce"));
         }
     }
-    let nonce = ports.sessions.nonce(token, ADMIN_ACTION);
-    let mut editor = Editor::new(
-        ports.repo,
-        ports.permissions,
-        ports.projector,
-        ports.clock,
-        site,
-    );
+    let nonce = sessions.nonce(token, ADMIN_ACTION);
+    let mut editor = Editor::new(repo, permissions, projector, clock, site);
     let segments: Vec<&str> = rest.trim_end_matches('/').split('/').collect();
     let query = form(request.query.as_bytes());
     let outcome = if api {
@@ -126,7 +132,7 @@ fn route(site: &Site, ports: Ports<'_>, request: &Request) -> Response {
             pairs: &pairs,
             query: &query,
             nonce: &nonce,
-            cards: ports.cards,
+            cards,
         };
         admin(&mut editor, call, &segments)
     };
@@ -143,44 +149,52 @@ struct Call<'r> {
 }
 
 fn admin(editor: &mut Editor<'_>, call: Call<'_>, segments: &[&str]) -> Result<Response, Error> {
+    let Call {
+        user,
+        request,
+        pairs,
+        query,
+        nonce,
+        cards,
+    } = call;
     let site = editor.site();
     let base = site.theme.base.clone();
-    let read = call.request.method.is_read();
-    let post = call.request.method == Method::Post;
+    let read = request.method.is_read();
+    let post = request.method == Method::Post;
     match segments {
         ["admin"] | ["admin", "posts"] if read => {
-            let filter = status_filter(field(call.query, "post_status"))?;
-            let number = page_number(field(call.query, "paged"))?;
-            let page = editor.list(call.user, filter, number)?;
+            let filter = status_filter(field(query, "post_status"))?;
+            let number = page_number(field(query, "paged"))?;
+            let page = editor.list(user, filter, number)?;
             Ok(html(200, pages::list(editor.site(), filter, number, &page)))
         }
         ["admin", "posts", "new"] if read => {
-            if !editor.can(call.user, "edit_posts")? {
+            if !editor.can(user, "edit_posts")? {
                 return Err(Error::Forbidden("edit_posts"));
             }
             let categories = editor.categories()?;
             Ok(html(
                 200,
-                pages::editor(editor.site(), None, &categories, call.nonce, None),
+                pages::editor(editor.site(), None, &categories, nonce, None),
             ))
         }
         ["admin", "posts", id, "edit"] if read => {
-            let (row, terms) = editor.load(call.user, post_id(id)?)?;
+            let (row, terms) = editor.load(user, post_id(id)?)?;
             let categories = editor.categories()?;
-            let notice = field(call.query, "message").and_then(notice);
+            let notice = field(query, "message").and_then(notice);
             Ok(html(
                 200,
                 pages::editor(
                     editor.site(),
                     Some((&row, &terms)),
                     &categories,
-                    call.nonce,
+                    nonce,
                     notice,
                 ),
             ))
         }
         ["admin", "preview", id] if read => {
-            let bytes = editor.preview(call.user, post_id(id)?, call.cards)?;
+            let bytes = editor.preview(user, post_id(id)?, cards)?;
             let mut response = html(200, bytes);
             response
                 .headers
@@ -188,11 +202,11 @@ fn admin(editor: &mut Editor<'_>, call: Call<'_>, segments: &[&str]) -> Result<R
             Ok(response)
         }
         ["admin", "posts"] if post => {
-            let saved = editor.save(call.user, None, &form_input(call.pairs)?)?;
+            let saved = editor.save(user, None, &form_input(pairs)?)?;
             Ok(after_save(&base, &saved))
         }
         ["admin", "posts", id] if post => {
-            let saved = editor.save(call.user, Some(post_id(id)?), &form_input(call.pairs)?)?;
+            let saved = editor.save(user, Some(post_id(id)?), &form_input(pairs)?)?;
             Ok(after_save(&base, &saved))
         }
         _ => Err(Error::NotFound("admin page")),
@@ -276,11 +290,7 @@ fn rest_api(
             let filter = status_filter(field(query, "status"))?;
             let number = page_number(field(query, "page"))?;
             let page = editor.list(user, filter, number)?;
-            let items: Vec<Value> = page
-                .posts
-                .iter()
-                .map(|row| post_json(row, None))
-                .collect();
+            let items: Vec<Value> = page.posts.iter().map(|row| post_json(row, None)).collect();
             let mut response = json_response(200, &Value::Array(items));
             response
                 .headers
@@ -336,9 +346,8 @@ fn json_input(body: &[u8]) -> Result<PostInput, Error> {
             Some(Value::Array(items)) => items
                 .iter()
                 .map(|item| {
-                    item.as_u64().ok_or_else(|| {
-                        Error::Invalid(format!("{name} must hold term ids").into())
-                    })
+                    item.as_u64()
+                        .ok_or_else(|| Error::Invalid(format!("{name} must hold term ids").into()))
                 })
                 .collect::<Result<Vec<u64>, Error>>()
                 .map(Some),
@@ -346,9 +355,7 @@ fn json_input(body: &[u8]) -> Result<PostInput, Error> {
         }
     };
     let status = text("status")?
-        .map(|status| {
-            Status::parse(&status).ok_or_else(|| Error::Invalid("unknown status".into()))
-        })
+        .map(|status| Status::parse(&status).ok_or_else(|| Error::Invalid("unknown status".into())))
         .transpose()?;
     Ok(PostInput {
         title: text("title")?,

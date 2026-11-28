@@ -73,7 +73,9 @@ pub fn sanitize(title: &str) -> String {
         }
         out.push(mapped);
     }
-    truncate(out.trim_matches('-'), MAX).trim_matches('-').to_owned()
+    truncate(out.trim_matches('-'), MAX)
+        .trim_matches('-')
+        .to_owned()
 }
 
 /// The slug a post saves with: drafts and pending posts keep theirs as is; otherwise a `-2`,

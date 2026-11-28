@@ -164,6 +164,7 @@ impl Change {
         match (before, after) {
             (_, Status::Trash) => Self::Trashed,
             (_, Status::Publish) if !was_public => Self::Published,
+            (_, Status::Publish) => Self::Updated,
             (None, _) => Self::Created,
             (Some(_), _) if was_public => Self::Unpublished,
             (Some(_), _) => Self::Updated,
@@ -186,12 +187,7 @@ impl OutboxEvent {
     /// The event for a committed post write. The payload names the action and the slugs the
     /// projector must re-render or redirect: the current one and the previous one.
     #[must_use]
-    pub fn post(
-        post: PostId,
-        change: Change,
-        after: &PostWrite,
-        before: Option<&PostRow>,
-    ) -> Self {
+    pub fn post(post: PostId, change: Change, after: &PostWrite, before: Option<&PostRow>) -> Self {
         use serde_json::json;
         let mut payload = serde_json::Map::new();
         for (key, value) in [
@@ -330,7 +326,10 @@ mod tests {
             assert_eq!(shared.aggregate_id(), 5);
             assert_eq!(shared.change(), cms_outbox::Change::Saved);
             let fresh = OutboxEvent::post(id, Change::Created, &after, None);
-            assert_eq!(fresh.payload.get("old_slug"), Some(&serde_json::Value::Null));
+            assert_eq!(
+                fresh.payload.get("old_slug"),
+                Some(&serde_json::Value::Null)
+            );
         }
     }
 }

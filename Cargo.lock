@@ -326,6 +326,7 @@ dependencies = [
  "cms-auth",
  "cms-content",
  "cms-db",
+ "cms-outbox",
  "cms-readmodel",
  "cms-render",
  "cms-users",
@@ -927,6 +928,16 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "lambda-admin"
+version = "0.0.0"
+dependencies = [
+ "cms-authoring",
+ "serde_json",
+ "thiserror",
+ "ureq",
 ]
 
 [[package]]

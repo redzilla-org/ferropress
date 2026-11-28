@@ -366,9 +366,7 @@ impl Repo for SqlRepo<'_> {
 
     fn insert_post(&mut self, row: &PostWrite) -> Result<PostId, Error> {
         let mut sql = self.statement();
-        sql.raw("INSERT INTO ")
-            .ident(self.table("posts"))
-            .raw(" (");
+        sql.raw("INSERT INTO ").ident(self.table("posts")).raw(" (");
         for (index, field) in Field::ALL.iter().enumerate() {
             if index > 0 {
                 sql.raw(", ");
@@ -400,9 +398,7 @@ impl Repo for SqlRepo<'_> {
             ("post_modified_gmt", &row.modified_gmt),
         ];
         let mut sql = self.statement();
-        sql.raw("UPDATE ")
-            .ident(self.table("posts"))
-            .raw(" SET ");
+        sql.raw("UPDATE ").ident(self.table("posts")).raw(" SET ");
         for (index, (column, value)) in cells.iter().enumerate() {
             if index > 0 {
                 sql.raw(", ");
@@ -491,7 +487,10 @@ impl Repo for SqlRepo<'_> {
             .raw(" = ")
             .literal(key);
         if let Some(value) = value {
-            sql.raw(" AND ").ident("meta_value").raw(" = ").literal(value);
+            sql.raw(" AND ")
+                .ident("meta_value")
+                .raw(" = ")
+                .literal(value);
         }
         self.done(sql).map(|_done| ())
     }
@@ -703,12 +702,15 @@ impl Repo for SqlRepo<'_> {
     // The shared writer owns the row's shape, so the projector can always parse what the admin
     // writes; it runs on this connection, inside the caller's open transaction.
     fn outbox(&mut self, event: &OutboxEvent) -> Result<(), Error> {
-        cms_outbox::write(&mut Through(&mut *self.store), &self.prefix, &event.to_event()).map_err(
-            |error| match error {
-                cms_outbox::OutboxError::Store(_) => Error::Unavailable,
-                other => Error::Rejected(other.to_string().into()),
-            },
+        cms_outbox::write(
+            &mut Through(&mut *self.store),
+            &self.prefix,
+            &event.to_event(),
         )
+        .map_err(|error| match error {
+            cms_outbox::OutboxError::Store(_) => Error::Unavailable,
+            other => Error::Rejected(other.to_string().into()),
+        })
     }
 
     fn author(&mut self, id: u64) -> Result<Option<(String, String)>, Error> {

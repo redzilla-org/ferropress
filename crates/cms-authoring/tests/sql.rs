@@ -2,7 +2,7 @@
 //! holding the post row, its term links and exactly one shared-shape outbox row.
 
 use cms_authoring::{
-    Clock, Editor, Error, Permissions, PostInput, Projector, SqlRepo, Site, Status,
+    Clock, Editor, Error, Permissions, PostInput, Projector, Site, SqlRepo, Status,
 };
 use cms_db::{Dialect, Reply, ResultSet, Sql, Store, StoreError, TablePrefix};
 use cms_users::UserId;
@@ -82,7 +82,8 @@ fn publish(store: &mut Recording, nudges: &mut Nudges) -> Result<(), Error> {
     let user = UserId::new(1).map_err(|_zero| Error::Unavailable)?;
     let mut repo = SqlRepo::new(store, &prefix);
     let site = site();
-    let mut editor = Editor::new(&mut repo, &mut Everything, nudges, &Fixed, &site);
+    let mut everything = Everything;
+    let mut editor = Editor::new(&mut repo, &mut everything, nudges, &Fixed, &site);
     let input = PostInput {
         title: Some("Hello World".into()),
         content: Some("<p>Hi</p>".into()),
@@ -108,7 +109,10 @@ fn a_publish_is_one_transaction_with_one_outbox_row() {
     let post = position(r#"INSERT INTO "fp_posts""#);
     let link = position(r#"INSERT INTO "fp_term_relationships""#);
     let outbox = position(r#"INSERT INTO "fp_outbox""#);
-    assert!(post.is_some() && link.is_some() && outbox.is_some(), "{statements:#?}");
+    assert!(
+        post.is_some() && link.is_some() && outbox.is_some(),
+        "{statements:#?}"
+    );
     assert!(post < link && link < outbox);
     let outbox_rows: Vec<&String> = statements
         .iter()
@@ -117,7 +121,10 @@ fn a_publish_is_one_transaction_with_one_outbox_row() {
     assert_eq!(outbox_rows.len(), 1);
     let row = outbox_rows[0];
     assert!(row.contains("'post', 7, 'saved'"), "{row}");
-    assert!(row.contains(r#""action":"published""#) && row.contains("::jsonb"), "{row}");
+    assert!(
+        row.contains(r#""action":"published""#) && row.contains("::jsonb"),
+        "{row}"
+    );
     assert!(row.contains(r#""slug":"hello-world""#), "{row}");
     assert_eq!(nudges.0, 1);
 }
@@ -131,7 +138,10 @@ fn a_rejected_statement_rolls_back_and_skips_the_nudge() {
     let mut nudges = Nudges::default();
     let outcome = publish(&mut store, &mut nudges);
     assert!(matches!(outcome, Err(Error::Rejected(_))), "{outcome:?}");
-    assert_eq!(store.statements.last().map(String::as_str), Some("ROLLBACK"));
+    assert_eq!(
+        store.statements.last().map(String::as_str),
+        Some("ROLLBACK")
+    );
     assert!(!store.statements.iter().any(|s| s == "COMMIT"));
     assert_eq!(nudges.0, 0);
 }

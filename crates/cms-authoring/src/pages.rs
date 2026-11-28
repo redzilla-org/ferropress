@@ -1,5 +1,7 @@
 //! The native admin's HTML: list, editor and error pages, in Ferropress's own markup and styles.
 
+use std::fmt::Write as _;
+
 use cms_render::push_escaped;
 
 use crate::editor::{Page, Site};
@@ -34,7 +36,9 @@ pub(crate) fn frame(site: &Site, title: &str, body: &str) -> Vec<u8> {
     out.push_str(STYLE);
     out.push_str("</style>\n<script src=\"");
     push_escaped(&mut out, base);
-    out.push_str("admin/editor.js\" defer></script>\n</head>\n<body>\n<header class=\"admin\"><a href=\"");
+    out.push_str(
+        "admin/editor.js\" defer></script>\n</head>\n<body>\n<header class=\"admin\"><a href=\"",
+    );
     push_escaped(&mut out, base);
     out.push_str("admin/\">Posts</a><a href=\"");
     push_escaped(&mut out, base);
@@ -90,18 +94,20 @@ pub(crate) fn list(site: &Site, filter: StatusFilter, number: u64, page: &Page) 
         StatusFilter::Only(status) => format!("post_status={}&amp;", status.as_str()),
     };
     if number > 1 {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<a href=\"{}admin/?{status}paged={}\">Newer</a> ",
             encode(base),
             number - 1
-        ));
+        );
     }
     if page.has_next {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<a href=\"{}admin/?{status}paged={}\">Older</a>",
             encode(base),
             number + 1
-        ));
+        );
     }
     out.push_str("</p>");
     frame(site, "Posts", &out)
@@ -111,7 +117,7 @@ fn row(out: &mut String, base: &str, post: &PostRow) {
     let id = post.id.as_u64();
     out.push_str("<tr><td><a href=\"");
     push_escaped(out, base);
-    out.push_str(&format!("admin/posts/{id}/edit\">"));
+    let _ = write!(out, "admin/posts/{id}/edit\">");
     if post.title.is_empty() {
         out.push_str("(no title)");
     } else {
@@ -123,7 +129,7 @@ fn row(out: &mut String, base: &str, post: &PostRow) {
     push_escaped(out, &post.date);
     out.push_str("</td><td><a href=\"");
     push_escaped(out, base);
-    out.push_str(&format!("admin/preview/{id}\">Preview</a></td></tr>\n"));
+    let _ = writeln!(out, "admin/preview/{id}\">Preview</a></td></tr>");
 }
 
 /// The editor for a new post (`post` is `None`) or an existing one.
@@ -149,7 +155,9 @@ pub(crate) fn editor(
     out.push_str("<form method=\"post\" data-fp-signed action=\"");
     push_escaped(&mut out, base);
     match post {
-        Some((row, _)) => out.push_str(&format!("admin/posts/{}", row.id.as_u64())),
+        Some((row, _)) => {
+            let _ = write!(out, "admin/posts/{}", row.id.as_u64());
+        }
         None => out.push_str("admin/posts"),
     }
     out.push_str("\">\n<input type=\"hidden\" name=\"_fpnonce\" value=\"");
@@ -168,11 +176,12 @@ pub(crate) fn editor(
         let checked = assigned
             .iter()
             .any(|term| term.taxonomy_id == category.taxonomy_id);
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<label><input type=\"checkbox\" name=\"category\" value=\"{}\"{}> ",
             category.term_id,
             if checked { " checked" } else { "" }
-        ));
+        );
         push_escaped(&mut out, &category.name);
         out.push_str("</label>\n");
     }
@@ -197,30 +206,37 @@ pub(crate) fn editor(
         buttons.push(("trash", "Move to trash"));
     }
     for (value, label) in buttons {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<button type=\"submit\" name=\"do\" value=\"{value}\">{label}</button>"
-        ));
+        );
     }
     if let Some(row) = row {
         out.push_str("<a href=\"");
         push_escaped(&mut out, base);
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "admin/preview/{}\" target=\"_blank\">Preview</a>",
             row.id.as_u64()
-        ));
+        );
     }
     out.push_str("</p>\n</form>");
     frame(
         site,
-        if post.is_some() { "Edit post" } else { "New post" },
+        if post.is_some() {
+            "Edit post"
+        } else {
+            "New post"
+        },
         &out,
     )
 }
 
 fn text_field(out: &mut String, name: &str, label: &str, value: &str) {
-    out.push_str(&format!(
+    let _ = write!(
+        out,
         "<label for=\"{name}\">{label}</label><input type=\"text\" id=\"{name}\" name=\"{name}\" value=\""
-    ));
+    );
     push_escaped(out, value);
     out.push_str("\">\n");
 }

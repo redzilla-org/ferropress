@@ -16,11 +16,5 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 ureq = { workspace = true }
 
-# The end-to-end test drives one invocation through the router with in-memory ports.
-[dev-dependencies]
-cms-content = { workspace = true }
-cms-render = { path = "../../crates/cms-render" }
-cms-users = { workspace = true }
-
 [lints]
 workspace = true

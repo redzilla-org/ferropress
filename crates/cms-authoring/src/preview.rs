@@ -66,8 +66,7 @@ pub(crate) fn render(
         excerpt: row.excerpt.as_str().into(),
         content: row.content.as_str().into(),
     };
-    let fragment =
-        single(theme, &post, cards).map_err(|error| Error::Rejected(error.0.clone()))?;
+    let fragment = single(theme, &post, cards).map_err(|error| Error::Rejected(error.0.clone()))?;
     cms_readmodel::assemble(&shell(theme).bytes, &fragment.rendered.bytes)
         .map_err(|error| Error::Rejected(error.to_string().into()))
 }
