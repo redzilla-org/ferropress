@@ -9,9 +9,11 @@ license.workspace = true
 repository.workspace = true
 
 # Deliberately small: no async runtime, no AWS SDK, no PHP engine. ureq (already admitted for
-# xtask) talks to the local Lambda Runtime API over plain HTTP; serde_json decodes the event.
+# xtask) talks to the local Lambda Runtime API over plain HTTP; serde_json decodes the event;
+# infra-aws signs the one DynamoDB GetItem and the S3 GetObjects per miss.
 [dependencies]
 cms-readmodel = { path = "../../crates/cms-readmodel" }
+infra-aws = { path = "../../crates/infra-aws" }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 ureq = { workspace = true }
