@@ -1,0 +1,22 @@
+[package]
+name = "lambda-media"
+description = "Media Lambdas: presigned upload signing and incoming image processing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Event decoding only: the Runtime API loop and the AWS adapters arrive with infra-aws (#4).
+[dependencies]
+cms-db = { workspace = true }
+cms-media = { path = "../../crates/cms-media" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+image = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,22 @@
+[package]
+name = "cms-media"
+description = "Media uploads: presigned upload policy, image sub-sizes and attachment rows"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cms-content = { workspace = true }
+cms-db = { workspace = true }
+image = { workspace = true }
+php-serialize = { path = "../php-serialize" }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true
