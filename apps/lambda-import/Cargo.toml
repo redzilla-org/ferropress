@@ -1,0 +1,24 @@
+[package]
+name = "lambda-import"
+description = "Import Lambda: runs a WXR export uploaded to site/imports/ into the site database"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Same shape as lambda-project: blocking ureq against the local Runtime API, no async runtime
+# and no AWS SDK. The job is cms-import over ports; infra-aws supplies S3 and DynamoDB, ureq
+# (with rustls, as infra-aws enables it) fetches attachments.
+[dependencies]
+cms-db = { workspace = true }
+cms-import = { workspace = true }
+cms-outbox = { workspace = true }
+infra-aws = { path = "../../crates/infra-aws" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ureq = { workspace = true, features = ["rustls"] }
+
+[lints]
+workspace = true
