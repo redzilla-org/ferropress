@@ -128,7 +128,8 @@ impl Migration {
                     .file_stem()
                     .and_then(|stem| stem.to_str())
                     .ok_or_else(|| MigrateError::BadVersion(path.display().to_string().into()))?;
-                let text = std::fs::read_to_string(path).map_err(|source| read_error(path, source))?;
+                let text =
+                    std::fs::read_to_string(path).map_err(|source| read_error(path, source))?;
                 Self::parse(version, &text)
             })
             .collect()
@@ -179,7 +180,9 @@ impl<C: Connector, K: TokenSource> Dsql<C, K> {
                     TransactionError::Closure(error) => failed(error),
                     other => MigrateError::Transaction(other.to_string()),
                 })?;
-                let mut record = b"INSERT INTO \"fp_schema_migrations\" (\"version\", \"statement\") VALUES (".to_vec();
+                let mut record =
+                    b"INSERT INTO \"fp_schema_migrations\" (\"version\", \"statement\") VALUES ("
+                        .to_vec();
                 record.extend_from_slice(&version);
                 record.extend_from_slice(format!(", {number})").as_bytes());
                 self.write_once(&Sql::new(record))
@@ -204,7 +207,9 @@ impl<C: Connector, K: TokenSource> Dsql<C, K> {
     fn applied_set(&mut self) -> Result<HashSet<(String, usize)>, MigrateError> {
         let sql = b"SELECT \"version\", \"statement\" FROM \"fp_schema_migrations\"";
         let set = match self.run(sql)? {
-            Outcome::Failed(error) if error.state.as_bytes() == b"42P01" => return Ok(HashSet::new()),
+            Outcome::Failed(error) if error.state.as_bytes() == b"42P01" => {
+                return Ok(HashSet::new());
+            }
             Outcome::Rows(set) => set,
             Outcome::Failed(_) | Outcome::Done { .. } => return Err(MigrateError::BadLedger),
         };
@@ -212,7 +217,8 @@ impl<C: Connector, K: TokenSource> Dsql<C, K> {
             .iter()
             .map(|row| match row.cells() {
                 [Cell::Bytes(version), Cell::Bytes(number)] => {
-                    let version = std::str::from_utf8(version).map_err(|_utf8| MigrateError::BadLedger)?;
+                    let version =
+                        std::str::from_utf8(version).map_err(|_utf8| MigrateError::BadLedger)?;
                     let number = std::str::from_utf8(number)
                         .ok()
                         .and_then(|text| text.parse::<usize>().ok())
@@ -236,7 +242,11 @@ mod tests {
         assert!(parsed.is_ok());
         if let Ok(migration) = parsed {
             assert_eq!(migration.version(), "0001-core");
-            let statements: Vec<&[u8]> = migration.statements().iter().map(cms_db::Sql::as_bytes).collect();
+            let statements: Vec<&[u8]> = migration
+                .statements()
+                .iter()
+                .map(cms_db::Sql::as_bytes)
+                .collect();
             assert_eq!(
                 statements,
                 [
@@ -253,7 +263,10 @@ mod tests {
             Migration::parse("0002", "CREATE TABLE \"a\" (\"x\" text)"),
             Err(MigrateError::Unterminated(_))
         ));
-        assert!(matches!(Migration::parse("", "SELECT 1;"), Err(MigrateError::BadVersion(_))));
+        assert!(matches!(
+            Migration::parse("", "SELECT 1;"),
+            Err(MigrateError::BadVersion(_))
+        ));
     }
 
     #[test]
@@ -266,8 +279,16 @@ mod tests {
             let statements = migrations[0].statements();
             // Counted from deploy/aws/dsql/0001-core.sql: 14 CREATE TABLE and 30 CREATE INDEX.
             assert_eq!(statements.len(), 44);
-            assert!(statements[0].as_bytes().starts_with(b"CREATE TABLE \"fp_schema_migrations\""));
-            assert!(statements.iter().all(|sql| sql.as_bytes().starts_with(b"CREATE ")));
+            assert!(
+                statements[0]
+                    .as_bytes()
+                    .starts_with(b"CREATE TABLE \"fp_schema_migrations\"")
+            );
+            assert!(
+                statements
+                    .iter()
+                    .all(|sql| sql.as_bytes().starts_with(b"CREATE "))
+            );
         }
         assert!(matches!(
             Migration::load_dir(std::path::Path::new("/nonexistent-migrations")),

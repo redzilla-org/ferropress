@@ -9,7 +9,9 @@ use cms_db::{Cell, Reply, Sql, Store, store_contract};
 use infra_dsql::fake::{
     FakeServer, Frames, Greeting, ListedTokens, ManualClock, PlainTcp, Session, test_roots,
 };
-use infra_dsql::{Connector, Dsql, Endpoint, Error, MigrateError, Migration, Retry, Tls, TransactionError};
+use infra_dsql::{
+    Connector, Dsql, Endpoint, Error, MigrateError, Migration, Retry, Tls, TransactionError,
+};
 
 const TOKEN_LIFETIME: Duration = Duration::from_secs(15 * 60);
 
@@ -52,12 +54,18 @@ fn the_store_contract_holds_over_the_wire() {
             let steps: Vec<(String, Frames)> = script
                 .iter()
                 .map(|(sql, reply)| {
-                    (String::from_utf8_lossy(sql.as_bytes()).into_owned(), Frames::from_reply(reply))
+                    (
+                        String::from_utf8_lossy(sql.as_bytes()).into_owned(),
+                        Frames::from_reply(reply),
+                    )
                 })
                 .collect();
             let session = Session::new(
                 "token-1",
-                steps.iter().map(|(sql, frames)| (sql.as_str(), frames.clone())).collect(),
+                steps
+                    .iter()
+                    .map(|(sql, frames)| (sql.as_str(), frames.clone()))
+                    .collect(),
             );
             let started = FakeServer::start(vec![session]).expect("fake server binds");
             let (dsql, _) = store(&started, &["token-1"], &clock);
@@ -69,7 +77,11 @@ fn the_store_contract_holds_over_the_wire() {
     let seen = server.expect("contract built the server").seen();
     assert_eq!(
         seen.logins,
-        [("app".to_owned(), "postgres".to_owned(), "token-1".to_owned())]
+        [(
+            "app".to_owned(),
+            "postgres".to_owned(),
+            "token-1".to_owned()
+        )]
     );
     assert_eq!(seen.statements.len(), 3);
 }
@@ -111,13 +123,20 @@ fn nulls_empty_queries_notices_and_multi_results_decode() {
     let rows = dsql.query(&Sql::from("SELECT a, b")).expect("rows");
     let set = rows.as_rows().expect("a result set");
     assert_eq!(set.rows()[0].cells(), [Cell::Null, Cell::bytes("x")]);
-    assert_eq!(dsql.query(&Sql::from("")).ok().and_then(|r| r.as_done()), Some((0, 0)));
     assert_eq!(
-        dsql.query(&Sql::from("SELECT 1; UPDATE t")).ok().and_then(|r| r.as_done()),
+        dsql.query(&Sql::from("")).ok().and_then(|r| r.as_done()),
+        Some((0, 0))
+    );
+    assert_eq!(
+        dsql.query(&Sql::from("SELECT 1; UPDATE t"))
+            .ok()
+            .and_then(|r| r.as_done()),
         Some((4, 0))
     );
     assert_eq!(
-        dsql.query(&Sql::from("INSERT RETURNING")).ok().and_then(|r| r.as_done()),
+        dsql.query(&Sql::from("INSERT RETURNING"))
+            .ok()
+            .and_then(|r| r.as_done()),
         Some((1, 77))
     );
     let shown = format!("{dsql:?}");
@@ -129,7 +148,10 @@ fn nulls_empty_queries_notices_and_multi_results_decode() {
 fn reuses_one_connection_then_reconnects_at_max_age_with_a_fresh_token() {
     let ok = || Frames::new().complete("UPDATE 1").ready(b'I');
     let server = FakeServer::start(vec![
-        Session::new("first", vec![step("UPDATE a", ok()), step("UPDATE b", ok())]),
+        Session::new(
+            "first",
+            vec![step("UPDATE a", ok()), step("UPDATE b", ok())],
+        ),
         Session::new("second", vec![step("UPDATE c", ok())]),
     ])
     .expect("fake server binds");
@@ -155,17 +177,29 @@ fn reuses_one_connection_then_reconnects_at_max_age_with_a_fresh_token() {
 fn a_rejected_token_is_replaced_once() {
     let server = FakeServer::start(vec![
         Session::new("good", vec![]),
-        Session::new("good", vec![step("UPDATE a", Frames::new().complete("UPDATE 1").ready(b'I'))]),
+        Session::new(
+            "good",
+            vec![step(
+                "UPDATE a",
+                Frames::new().complete("UPDATE 1").ready(b'I'),
+            )],
+        ),
     ])
     .expect("fake server binds");
     let (mut dsql, tokens) = store(&server, &["stale", "good"], &ManualClock::default());
     assert!(dsql.query(&Sql::from("UPDATE a")).is_ok());
     assert_eq!(tokens.calls(), 2);
 
-    let refusing = FakeServer::start(vec![Session::new("good", vec![]), Session::new("good", vec![])])
-        .expect("fake server binds");
+    let refusing = FakeServer::start(vec![
+        Session::new("good", vec![]),
+        Session::new("good", vec![]),
+    ])
+    .expect("fake server binds");
     let (mut dsql, tokens) = store(&refusing, &["bad", "worse"], &ManualClock::default());
-    assert!(dsql.query(&Sql::from("UPDATE a")).is_err_and(|error| error.is_unavailable()));
+    assert!(
+        dsql.query(&Sql::from("UPDATE a"))
+            .is_err_and(|error| error.is_unavailable())
+    );
     assert_eq!(tokens.calls(), 2);
 
     let (mut dsql, _) = store(&refusing, &[], &ManualClock::default());
@@ -185,19 +219,23 @@ fn unsupported_auth_and_broken_replies_are_unavailable_and_drop_the_connection()
     let server = FakeServer::start(vec![
         sasl,
         odd,
+        Session::new("t", vec![step("SELECT 1", Frames::new().ready(b'I'))]),
+        Session::new("t", vec![step("SELECT 2", Frames::new().raw(b'W', &[]))]),
         Session::new(
             "t",
-            vec![
-                step("SELECT 1", Frames::new().ready(b'I')),
-            ],
+            vec![step(
+                "SELECT 3",
+                Frames::new().complete("SELECT 0").ready(b'I'),
+            )],
         ),
-        Session::new("t", vec![step("SELECT 2", Frames::new().raw(b'W', &[]))]),
-        Session::new("t", vec![step("SELECT 3", Frames::new().complete("SELECT 0").ready(b'I'))]),
     ])
     .expect("fake server binds");
     let tokens: Vec<&str> = vec!["t"; 5];
     let (mut dsql, _) = store(&server, &tokens, &ManualClock::default());
-    let unavailable = |dsql: &mut Store_, sql: &str| dsql.query(&Sql::from(sql)).is_err_and(|e| e.is_unavailable());
+    let unavailable = |dsql: &mut Store_, sql: &str| {
+        dsql.query(&Sql::from(sql))
+            .is_err_and(|e| e.is_unavailable())
+    };
     assert!(unavailable(&mut dsql, "SELECT 0"));
     assert!(unavailable(&mut dsql, "SELECT 0"));
     assert!(unavailable(&mut dsql, "SELECT 1"));
@@ -215,9 +253,19 @@ fn transactions_commit_and_rerun_on_conflicts_with_bounded_jitter() {
         vec![
             begin(),
             step("UPDATE a", in_block("UPDATE 1")),
-            step("COMMIT", Frames::new().error("OC000", "change conflicts with another transaction").ready(b'I')),
+            step(
+                "COMMIT",
+                Frames::new()
+                    .error("OC000", "change conflicts with another transaction")
+                    .ready(b'I'),
+            ),
             begin(),
-            step("UPDATE a", Frames::new().error("40001", "could not serialize access").ready(b'E')),
+            step(
+                "UPDATE a",
+                Frames::new()
+                    .error("40001", "could not serialize access")
+                    .ready(b'E'),
+            ),
             rollback(),
             begin(),
             step("UPDATE a", in_block("UPDATE 1")),
@@ -235,7 +283,8 @@ fn transactions_commit_and_rerun_on_conflicts_with_bounded_jitter() {
     let mut runs = 0;
     let committed = dsql.with_transaction(|tx| {
         runs += 1;
-        tx.query(&Sql::from("UPDATE a")).map(|reply| reply.as_done())
+        tx.query(&Sql::from("UPDATE a"))
+            .map(|reply| reply.as_done())
     });
     assert_eq!(committed.ok(), Some(Some((1, 0))));
     assert_eq!(runs, 3);
@@ -250,7 +299,12 @@ fn conflicts_past_the_attempt_limit_report_the_last_one() {
     let conflict = || Frames::new().error("OC001", "schema changed").ready(b'I');
     let server = FakeServer::start(vec![Session::new(
         "t",
-        vec![begin(), step("COMMIT", conflict()), begin(), step("COMMIT", conflict())],
+        vec![
+            begin(),
+            step("COMMIT", conflict()),
+            begin(),
+            step("COMMIT", conflict()),
+        ],
     )])
     .expect("fake server binds");
     let (dsql, _) = store(&server, &["t"], &ManualClock::default());
@@ -273,23 +327,43 @@ fn closure_errors_failed_blocks_and_commit_errors_roll_back_or_abort() {
             begin(),
             rollback(),
             begin(),
-            step("INSERT dup", Frames::new().error("23505", "duplicate key").ready(b'E')),
+            step(
+                "INSERT dup",
+                Frames::new().error("23505", "duplicate key").ready(b'E'),
+            ),
             rollback(),
             begin(),
-            step("COMMIT", Frames::new().error("XX000", "internal").ready(b'I')),
-            ("BEGIN", Frames::new().error("XX000", "cannot begin").ready(b'I')),
-            ("BEGIN", Frames::new().rows(&["x"], &[]).complete("SELECT 0").ready(b'I')),
+            step(
+                "COMMIT",
+                Frames::new().error("XX000", "internal").ready(b'I'),
+            ),
+            (
+                "BEGIN",
+                Frames::new().error("XX000", "cannot begin").ready(b'I'),
+            ),
+            (
+                "BEGIN",
+                Frames::new()
+                    .rows(&["x"], &[])
+                    .complete("SELECT 0")
+                    .ready(b'I'),
+            ),
         ],
     )])
     .expect("fake server binds");
     let (mut dsql, _) = store(&server, &["t"], &ManualClock::default());
 
     let closure = dsql.with_transaction(|_tx| Err::<(), _>("domain refused"));
-    assert!(matches!(closure, Err(TransactionError::Closure("domain refused"))));
+    assert!(matches!(
+        closure,
+        Err(TransactionError::Closure("domain refused"))
+    ));
 
     // The closure ignored a failed statement; COMMIT would silently roll back, so it is refused.
     let ignored = dsql.with_transaction(|tx| tx.query(&Sql::from("INSERT dup")).map(|_| ()));
-    assert!(matches!(ignored, Err(TransactionError::Aborted(error)) if error.message().contains("25P02")));
+    assert!(
+        matches!(ignored, Err(TransactionError::Aborted(error)) if error.message().contains("25P02"))
+    );
 
     let commit = dsql.with_transaction(|_tx| Ok::<(), ()>(()));
     assert!(matches!(commit, Err(TransactionError::Aborted(error)) if error.code() == 1105));
@@ -306,7 +380,13 @@ fn closure_errors_failed_blocks_and_commit_errors_roll_back_or_abort() {
 fn tls_sessions_verify_the_server_and_carry_queries() {
     let server = FakeServer::start_tls(vec![Session::new(
         "t",
-        vec![step("SELECT 1", Frames::new().rows(&["n"], &[&[Some("1")]]).complete("SELECT 1").ready(b'I'))],
+        vec![step(
+            "SELECT 1",
+            Frames::new()
+                .rows(&["n"], &[&[Some("1")]])
+                .complete("SELECT 1")
+                .ready(b'I'),
+        )],
     )])
     .expect("fake server binds");
     let tls = Tls::with_roots(test_roots().expect("test roots load")).expect("tls config");
@@ -323,12 +403,19 @@ fn tls_sessions_verify_the_server_and_carry_queries() {
 fn tls_refusals_untrusted_servers_and_odd_answers_fail_the_connect() {
     let plain = FakeServer::start(vec![Session::new("t", vec![])]).expect("fake server binds");
     let tls = Tls::with_roots(test_roots().expect("test roots load")).expect("tls config");
-    assert!(matches!(tls.connect(&plain.endpoint()), Err(Error::TlsRefused)));
+    assert!(matches!(
+        tls.connect(&plain.endpoint()),
+        Err(Error::TlsRefused)
+    ));
 
-    let untrusted = FakeServer::start_tls(vec![Session::new("t", vec![])]).expect("fake server binds");
+    let untrusted =
+        FakeServer::start_tls(vec![Session::new("t", vec![])]).expect("fake server binds");
     let public_roots = Tls::new().expect("tls config");
     assert!(format!("{public_roots:?}").starts_with("Tls"));
-    assert!(matches!(public_roots.connect(&untrusted.endpoint()), Err(Error::Tls(_))));
+    assert!(matches!(
+        public_roots.connect(&untrusted.endpoint()),
+        Err(Error::Tls(_))
+    ));
 
     assert!(matches!(
         tls.connect(&Endpoint::new("bad host name", 1, "app", "postgres")),
@@ -385,18 +472,32 @@ fn migrations_apply_once_and_skip_recorded_statements() {
     let migrations = core();
     let mut first: Vec<(String, Frames)> = vec![(
         LEDGER.to_owned(),
-        Frames::new().error("42P01", "relation \"fp_schema_migrations\" does not exist").ready(b'I'),
+        Frames::new()
+            .error("42P01", "relation \"fp_schema_migrations\" does not exist")
+            .ready(b'I'),
     )];
     first.extend(ledger_steps(&migrations));
     let numbers: Vec<String> = (1..=44).map(|n| n.to_string()).collect();
-    let recorded: Vec<[Option<&str>; 2]> = numbers.iter().map(|n| [Some("0001-core"), Some(n.as_str())]).collect();
+    let recorded: Vec<[Option<&str>; 2]> = numbers
+        .iter()
+        .map(|n| [Some("0001-core"), Some(n.as_str())])
+        .collect();
     let rows: Vec<&[Option<&str>]> = recorded.iter().map(|row| &row[..]).collect();
     let second = vec![(
         LEDGER.to_owned(),
-        Frames::new().rows(&["version", "statement"], &rows).complete("SELECT 44").ready(b'I'),
+        Frames::new()
+            .rows(&["version", "statement"], &rows)
+            .complete("SELECT 44")
+            .ready(b'I'),
     )];
     let as_session = |steps: &[(String, Frames)]| {
-        Session::new("t", steps.iter().map(|(sql, frames)| (sql.as_str(), frames.clone())).collect())
+        Session::new(
+            "t",
+            steps
+                .iter()
+                .map(|(sql, frames)| (sql.as_str(), frames.clone()))
+                .collect(),
+        )
     };
     let server = FakeServer::start(vec![as_session(&first)]).expect("fake server binds");
     let (mut dsql, _) = store(&server, &["t"], &ManualClock::default());
@@ -413,18 +514,29 @@ fn migrations_apply_once_and_skip_recorded_statements() {
 #[test]
 fn migration_failures_stop_the_run() {
     let one = Migration::parse("0002-x", "CREATE TABLE \"x\" (\"a\" text);\n").expect("parses");
-    let empty_ledger = || Frames::new().rows(&["version", "statement"], &[]).complete("SELECT 0").ready(b'I');
+    let empty_ledger = || {
+        Frames::new()
+            .rows(&["version", "statement"], &[])
+            .complete("SELECT 0")
+            .ready(b'I')
+    };
     let server = FakeServer::start(vec![
         Session::new(
             "t",
             vec![
                 (LEDGER, empty_ledger()),
                 begin(),
-                ("CREATE TABLE \"x\" (\"a\" text)", Frames::new().error("42P07", "relation exists").ready(b'E')),
+                (
+                    "CREATE TABLE \"x\" (\"a\" text)",
+                    Frames::new().error("42P07", "relation exists").ready(b'E'),
+                ),
                 rollback(),
             ],
         ),
-        Session::new("t", vec![(LEDGER, Frames::new().complete("UPDATE 0").ready(b'I'))]),
+        Session::new(
+            "t",
+            vec![(LEDGER, Frames::new().complete("UPDATE 0").ready(b'I'))],
+        ),
         Session::new(
             "t",
             vec![(
@@ -437,7 +549,14 @@ fn migration_failures_stop_the_run() {
         ),
         Session::new(
             "t",
-            vec![(LEDGER, empty_ledger()), begin(), ("CREATE TABLE \"x\" (\"a\" text)", Frames::new().raw(b'W', &[]))],
+            vec![
+                (LEDGER, empty_ledger()),
+                begin(),
+                (
+                    "CREATE TABLE \"x\" (\"a\" text)",
+                    Frames::new().raw(b'W', &[]),
+                ),
+            ],
         ),
     ])
     .expect("fake server binds");
@@ -448,10 +567,22 @@ fn migration_failures_stop_the_run() {
         Err(MigrateError::Statement { statement: 1, error, .. }) if error.code() == 1050
     ));
     dsql.disconnect();
-    assert!(matches!(dsql.migrate(std::slice::from_ref(&one)), Err(MigrateError::BadLedger)));
+    assert!(matches!(
+        dsql.migrate(std::slice::from_ref(&one)),
+        Err(MigrateError::BadLedger)
+    ));
     dsql.disconnect();
-    assert!(matches!(dsql.migrate(std::slice::from_ref(&one)), Err(MigrateError::BadLedger)));
+    assert!(matches!(
+        dsql.migrate(std::slice::from_ref(&one)),
+        Err(MigrateError::BadLedger)
+    ));
     dsql.disconnect();
-    assert!(matches!(dsql.migrate(std::slice::from_ref(&one)), Err(MigrateError::Transaction(_))));
-    assert!(matches!(dsql.migrate(std::slice::from_ref(&one)), Err(MigrateError::Store(_))));
+    assert!(matches!(
+        dsql.migrate(std::slice::from_ref(&one)),
+        Err(MigrateError::Transaction(_))
+    ));
+    assert!(matches!(
+        dsql.migrate(std::slice::from_ref(&one)),
+        Err(MigrateError::Store(_))
+    ));
 }

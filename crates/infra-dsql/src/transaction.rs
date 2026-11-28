@@ -1,6 +1,6 @@
 //! Closure transactions rerun on optimistic-concurrency conflicts.
 
-use cms_db::{Reply, ServerError, Sql, Store, StoreError};
+use cms_db::{Dialect, Reply, ServerError, Sql, Store, StoreError};
 
 use crate::conn::{Outcome, TxStatus};
 use crate::ports::{Connector, TokenSource};
@@ -33,6 +33,11 @@ pub struct Transaction<'a, C: Connector, K: TokenSource> {
 }
 
 impl<C: Connector, K: TokenSource> Store for Transaction<'_, C, K> {
+    // Same server as the owning session.
+    fn dialect(&self) -> Dialect {
+        Dialect::Postgres
+    }
+
     fn query(&mut self, sql: &Sql) -> Result<Reply, StoreError> {
         let outcome = self.session.run_in_block(sql.as_bytes())?;
         // A conflict dooms the block whatever the closure does next, so remember it for rerun.
@@ -78,7 +83,8 @@ impl<C: Connector, K: TokenSource> Dsql<C, K> {
         &mut self,
         work: &mut impl FnMut(&mut Transaction<'_, C, K>) -> Result<T, E>,
     ) -> Result<Result<T, PgError>, TransactionError<E>> {
-        self.control(b"BEGIN")?.map_err(|error| TransactionError::Aborted(error.to_server_error()))?;
+        self.control(b"BEGIN")?
+            .map_err(|error| TransactionError::Aborted(error.to_server_error()))?;
         let mut tx = Transaction {
             session: self,
             conflict: None,

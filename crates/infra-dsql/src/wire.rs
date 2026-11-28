@@ -154,7 +154,9 @@ impl<'a> Body<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Body, Message, read_message, write_cstr_message, write_ssl_request, write_startup};
+    use super::{
+        Body, Message, read_message, write_cstr_message, write_ssl_request, write_startup,
+    };
     use crate::Error;
 
     #[test]
@@ -163,7 +165,10 @@ mod tests {
         assert!(write_startup(&mut out, "app", "postgres").is_ok());
         let expected_body = b"\x00\x03\x00\x00user\0app\0database\0postgres\0\0";
         assert_eq!(&out[4..], expected_body);
-        assert_eq!(out[..4], i32::try_from(out.len()).unwrap_or(0).to_be_bytes());
+        assert_eq!(
+            out[..4],
+            i32::try_from(out.len()).unwrap_or(0).to_be_bytes()
+        );
         assert!(matches!(
             write_startup(&mut Vec::new(), "a\0b", "postgres"),
             Err(Error::Protocol(_))

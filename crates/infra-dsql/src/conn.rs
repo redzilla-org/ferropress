@@ -4,9 +4,9 @@ use std::io::{Read, Write};
 
 use cms_db::{Cell, Column, Reply, ResultSet, Row};
 
+use crate::Error;
 use crate::sqlstate::{PgError, SqlState};
 use crate::wire::{self, Body};
-use crate::Error;
 
 /// What one simple query produced, before the port's view is taken.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,7 +66,12 @@ impl<S: Read + Write> Connection<S> {
     ///
     /// [`Error::Refused`] when the server rejects the role, database or password;
     /// [`Error::UnsupportedAuth`] for any method but cleartext; I/O and protocol errors otherwise.
-    pub(crate) fn open(mut stream: S, user: &str, database: &str, password: &str) -> Result<Self, Error> {
+    pub(crate) fn open(
+        mut stream: S,
+        user: &str,
+        database: &str,
+        password: &str,
+    ) -> Result<Self, Error> {
         wire::write_startup(&mut stream, user, database)?;
         loop {
             let message = wire::read_message(&mut stream)?;
@@ -210,7 +215,8 @@ fn parse_status(body: &[u8]) -> Result<TxStatus, Error> {
 
 fn parse_columns(body: &[u8]) -> Result<Vec<Column>, Error> {
     let mut body = Body::new(body);
-    let count = usize::try_from(body.i16()?).map_err(|_negative| Error::Protocol("negative column count"))?;
+    let count = usize::try_from(body.i16()?)
+        .map_err(|_negative| Error::Protocol("negative column count"))?;
     let mut columns = Vec::with_capacity(count);
     for _ in 0..count {
         let name = body.cstr()?;
@@ -226,9 +232,12 @@ fn parse_columns(body: &[u8]) -> Result<Vec<Column>, Error> {
 
 fn parse_row(body: &[u8], width: usize) -> Result<Row, Error> {
     let mut body = Body::new(body);
-    let count = usize::try_from(body.i16()?).map_err(|_negative| Error::Protocol("negative field count"))?;
+    let count = usize::try_from(body.i16()?)
+        .map_err(|_negative| Error::Protocol("negative field count"))?;
     if count != width {
-        return Err(Error::Protocol("data row width differs from its description"));
+        return Err(Error::Protocol(
+            "data row width differs from its description",
+        ));
     }
     let mut cells = Vec::with_capacity(count);
     for _ in 0..count {
@@ -237,7 +246,8 @@ fn parse_row(body: &[u8], width: usize) -> Result<Row, Error> {
         let cell = if len == -1 {
             Cell::Null
         } else {
-            let len = usize::try_from(len).map_err(|_negative| Error::Protocol("negative field length"))?;
+            let len = usize::try_from(len)
+                .map_err(|_negative| Error::Protocol("negative field length"))?;
             Cell::bytes(body.take(len)?)
         };
         cells.push(cell);
@@ -274,7 +284,7 @@ fn parse_error(body: &[u8]) -> Result<PgError, Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{complete, parse_columns, parse_error, parse_row, parse_status, Outcome, TxStatus};
+    use super::{Outcome, TxStatus, complete, parse_columns, parse_error, parse_row, parse_status};
     use crate::Error;
     use cms_db::{Cell, Column, Reply, Row};
 
@@ -296,7 +306,11 @@ mod tests {
         );
         let id = vec![Column::new("ID")];
         assert_eq!(
-            complete(b"INSERT 0 1", Some(id.clone()), vec![Row::new(vec![Cell::bytes("42")])]),
+            complete(
+                b"INSERT 0 1",
+                Some(id.clone()),
+                vec![Row::new(vec![Cell::bytes("42")])]
+            ),
             Outcome::Done {
                 affected: 1,
                 insert_id: 42
@@ -311,11 +325,19 @@ mod tests {
         );
         // A non-numeric RETURNING value stays a result set.
         assert!(matches!(
-            complete(b"INSERT 0 1", Some(id), vec![Row::new(vec![Cell::bytes("abc")])]),
+            complete(
+                b"INSERT 0 1",
+                Some(id),
+                vec![Row::new(vec![Cell::bytes("abc")])]
+            ),
             Outcome::Rows(_)
         ));
         assert!(matches!(
-            complete(b"INSERT 0 1", Some(vec![Column::new("ID")]), vec![Row::new(vec![Cell::Null])]),
+            complete(
+                b"INSERT 0 1",
+                Some(vec![Column::new("ID")]),
+                vec![Row::new(vec![Cell::Null])]
+            ),
             Outcome::Rows(_)
         ));
         assert!(matches!(
@@ -349,13 +371,23 @@ mod tests {
 
     #[test]
     fn malformed_bodies_are_protocol_errors() {
-        assert!(matches!(parse_error(b"C42P01\0\0"), Err(Error::Protocol(_))));
-        assert!(matches!(parse_error(b"C42\0Mx\0\0"), Err(Error::Protocol(_))));
+        assert!(matches!(
+            parse_error(b"C42P01\0\0"),
+            Err(Error::Protocol(_))
+        ));
+        assert!(matches!(
+            parse_error(b"C42\0Mx\0\0"),
+            Err(Error::Protocol(_))
+        ));
         assert!(matches!(parse_status(b"Q"), Err(Error::Protocol(_))));
         assert_eq!(parse_status(b"T").ok(), Some(TxStatus::InBlock));
         assert_eq!(parse_status(b"E").ok(), Some(TxStatus::Failed));
-        assert!(matches!(parse_columns(b"\xff\xff"), Err(Error::Protocol(_))));
-        let binary = b"\x00\x01n\0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x17\x00\x04\xff\xff\xff\xff\x00\x01";
+        assert!(matches!(
+            parse_columns(b"\xff\xff"),
+            Err(Error::Protocol(_))
+        ));
+        let binary =
+            b"\x00\x01n\0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x17\x00\x04\xff\xff\xff\xff\x00\x01";
         assert!(matches!(parse_columns(binary), Err(Error::Protocol(_))));
         assert!(matches!(parse_row(b"\x00\x02", 1), Err(Error::Protocol(_))));
         assert!(matches!(parse_row(b"\xff\xff", 1), Err(Error::Protocol(_))));

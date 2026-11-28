@@ -3,11 +3,11 @@
 use std::fmt;
 use std::time::{Duration, Instant};
 
-use cms_db::{Reply, Sql, Store, StoreError};
+use cms_db::{Dialect, Reply, Sql, Store, StoreError};
 
+use crate::Error;
 use crate::conn::{Connection, Outcome, TxStatus};
 use crate::ports::{Clock, Connector, Endpoint, SystemClock, Token, TokenSource};
-use crate::Error;
 
 /// DSQL closes connections after 60 minutes; reconnecting at 55 leaves room for a long statement.
 pub const DEFAULT_MAX_AGE: Duration = Duration::from_secs(55 * 60);
@@ -158,7 +158,11 @@ impl<C: Connector, K: TokenSource> Dsql<C, K> {
         let ceiling = self
             .retry
             .base
-            .saturating_mul(1_u32.checked_shl(attempt.saturating_sub(1)).unwrap_or(u32::MAX))
+            .saturating_mul(
+                1_u32
+                    .checked_shl(attempt.saturating_sub(1))
+                    .unwrap_or(u32::MAX),
+            )
             .min(self.retry.cap);
         // xorshift64: cheap, dependency-free spread across concurrent writers.
         self.rng ^= self.rng << 13;
@@ -218,6 +222,11 @@ impl<C: Connector, K: TokenSource> Dsql<C, K> {
 }
 
 impl<C: Connector, K: TokenSource> Store for Dsql<C, K> {
+    // DSQL speaks PostgreSQL, so repositories render statements in that dialect.
+    fn dialect(&self) -> Dialect {
+        Dialect::Postgres
+    }
+
     fn query(&mut self, sql: &Sql) -> Result<Reply, StoreError> {
         Ok(self.run(sql.as_bytes())?.into_reply())
     }

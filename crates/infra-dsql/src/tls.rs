@@ -9,7 +9,7 @@ use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 
 use crate::ports::{Connector, Endpoint};
-use crate::{wire, Error};
+use crate::{Error, wire};
 
 /// Connects over TCP and upgrades to TLS before startup, refusing plaintext.
 #[derive(Clone)]
@@ -42,11 +42,12 @@ impl Tls {
     /// [`Error::Tls`] when the crypto provider rejects the default protocol versions.
     pub fn with_roots(roots: RootCertStore) -> Result<Self, Error> {
         // ring keeps the build free of a C toolchain, matching the workspace's TLS stack.
-        let config = ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .with_safe_default_protocol_versions()
-            .map_err(|error| Error::Tls(error.to_string().into()))?
-            .with_root_certificates(roots)
-            .with_no_client_auth();
+        let config =
+            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()
+                .map_err(|error| Error::Tls(error.to_string().into()))?
+                .with_root_certificates(roots)
+                .with_no_client_auth();
         Ok(Self {
             config: Arc::new(config),
         })

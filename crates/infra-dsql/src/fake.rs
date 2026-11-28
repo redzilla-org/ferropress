@@ -13,8 +13,8 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 
-use crate::ports::{Clock, Connector, Endpoint, Token, TokenSource};
 use crate::Error;
+use crate::ports::{Clock, Connector, Endpoint, Token, TokenSource};
 
 // Test-only certificate chain, generated for this fake with openssl (P-256, 100-year validity):
 // a CA, and a server certificate for `localhost` and `127.0.0.1` it signed. The key protects
@@ -29,7 +29,8 @@ const SERVER_KEY: &[u8] = include_bytes!("../fixtures/test-server.key");
 ///
 /// [`Error::Tls`] when the embedded certificate does not parse.
 pub fn test_roots() -> Result<RootCertStore, Error> {
-    let ca = CertificateDer::from_pem_slice(CA_CERT).map_err(|error| Error::Tls(error.to_string().into()))?;
+    let ca = CertificateDer::from_pem_slice(CA_CERT)
+        .map_err(|error| Error::Tls(error.to_string().into()))?;
     let mut roots = RootCertStore::empty();
     roots
         .add(ca)
@@ -56,7 +57,9 @@ impl Frames {
             body.extend_from_slice(name.as_bytes());
             body.push(0);
             // Table oid, attribute, type oid 25 (text), size -1, modifier -1, text format.
-            body.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 25, 255, 255, 255, 255, 255, 255, 0, 0]);
+            body.extend_from_slice(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 25, 255, 255, 255, 255, 255, 255, 0, 0,
+            ]);
         }
         self = self.raw(b'T', &body);
         for row in rows {
@@ -140,7 +143,9 @@ impl Frames {
                             .iter()
                             .map(|cell| match cell {
                                 Cell::Null => None,
-                                Cell::Bytes(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+                                Cell::Bytes(bytes) => {
+                                    Some(String::from_utf8_lossy(bytes).into_owned())
+                                }
                             })
                             .collect()
                     })
@@ -245,12 +250,13 @@ impl FakeServer {
         let pem = |error: rustls::pki_types::pem::Error| Error::Tls(error.to_string().into());
         let chain = vec![CertificateDer::from_pem_slice(SERVER_CERT).map_err(pem)?];
         let key = PrivateKeyDer::from_pem_slice(SERVER_KEY).map_err(pem)?;
-        let config = ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .with_safe_default_protocol_versions()
-            .map_err(tls)?
-            .with_no_client_auth()
-            .with_single_cert(chain, key)
-            .map_err(tls)?;
+        let config =
+            ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()
+                .map_err(tls)?
+                .with_no_client_auth()
+                .with_single_cert(chain, key)
+                .map_err(tls)?;
         Self::spawn(sessions, Some(Arc::new(config)))
     }
 
@@ -336,17 +342,29 @@ fn converse(
     };
     match &session.greeting {
         Greeting::Frames(frames) => {
-            record(log, |seen| seen.logins.push((param("user"), param("database"), String::new())));
+            record(log, |seen| {
+                seen.logins
+                    .push((param("user"), param("database"), String::new()))
+            });
             send(stream, &frames.0)?;
             return drain(stream);
         }
         Greeting::Password(expected) => {
             send(stream, &Frames::new().raw(b'R', &3_i32.to_be_bytes()).0)?;
             let (kind, body) = read_typed(stream)?;
-            let password = String::from_utf8_lossy(body.strip_suffix(&[0]).unwrap_or(&body)).into_owned();
-            record(log, |seen| seen.logins.push((param("user"), param("database"), password.clone())));
+            let password =
+                String::from_utf8_lossy(body.strip_suffix(&[0]).unwrap_or(&body)).into_owned();
+            record(log, |seen| {
+                seen.logins
+                    .push((param("user"), param("database"), password.clone()))
+            });
             if kind != b'p' || password != *expected {
-                return send(stream, &Frames::new().error("28P01", "password authentication failed").0);
+                return send(
+                    stream,
+                    &Frames::new()
+                        .error("28P01", "password authentication failed")
+                        .0,
+                );
             }
             let ok = Frames::new()
                 .raw(b'R', &0_i32.to_be_bytes())
@@ -364,7 +382,10 @@ fn converse(
             return Ok(());
         }
         let sql = body.strip_suffix(&[0]).unwrap_or(&body).to_vec();
-        record(log, |seen| seen.statements.push(String::from_utf8_lossy(&sql).into_owned()));
+        record(log, |seen| {
+            seen.statements
+                .push(String::from_utf8_lossy(&sql).into_owned())
+        });
         match steps.pop_front() {
             Some((expected, frames)) if *expected == sql => send(stream, &frames.0)?,
             _ => send(
@@ -387,7 +408,12 @@ fn drain(stream: &mut impl Read) -> std::io::Result<()> {
 fn read_untyped(stream: &mut impl Read) -> std::io::Result<Vec<u8>> {
     let mut len = [0_u8; 4];
     stream.read_exact(&mut len)?;
-    let mut body = vec![0_u8; usize::try_from(i32::from_be_bytes(len)).unwrap_or(4).saturating_sub(4)];
+    let mut body = vec![
+        0_u8;
+        usize::try_from(i32::from_be_bytes(len))
+            .unwrap_or(4)
+            .saturating_sub(4)
+    ];
     stream.read_exact(&mut body)?;
     Ok(body)
 }
@@ -411,7 +437,10 @@ fn parse_params(body: &[u8]) -> Vec<(String, String)> {
 }
 
 fn count16(count: usize) -> Vec<u8> {
-    i16::try_from(count).unwrap_or(i16::MAX).to_be_bytes().to_vec()
+    i16::try_from(count)
+        .unwrap_or(i16::MAX)
+        .to_be_bytes()
+        .to_vec()
 }
 
 fn len32(len: usize) -> [u8; 4] {
@@ -449,7 +478,9 @@ impl ListedTokens {
     #[must_use]
     pub fn new(secrets: &[&str], lifetime: Duration) -> Self {
         Self {
-            secrets: Rc::new(RefCell::new(secrets.iter().map(|secret| (*secret).to_owned()).collect())),
+            secrets: Rc::new(RefCell::new(
+                secrets.iter().map(|secret| (*secret).to_owned()).collect(),
+            )),
             lifetime,
             calls: Rc::new(StdCell::new(0)),
         }
