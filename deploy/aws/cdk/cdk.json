@@ -1,0 +1,12 @@
+{
+  "app": "npx tsc && node dist/bin/app.js",
+  "watch": { "include": [] },
+  "context": {
+    "site": "example",
+    "envName": "dev",
+    "basePath": "/blog/",
+    "alarmEmail": "alerts@example.com",
+    "mailIdentity": "example.com",
+    "@aws-cdk/core:defaultCrossStackReferences": "strong"
+  }
+}

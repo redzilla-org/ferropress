@@ -5,6 +5,24 @@ use crate::{BasePath, BlobKey, Content, Resolved, Route, RouteKey};
 /// Where the body fragment goes inside a page shell.
 pub const BODY_MARK: &[u8] = b"<!--fp:body-->";
 
+/// Where a fragment's per-page head part (title, canonical, metadata) goes inside a page shell.
+pub const HEAD_MARK: &[u8] = b"<!--fp:head-->";
+
+/// Ends the per-page head part at the start of a page fragment; the rest is the body.
+pub const HEAD_END: &[u8] = b"<!--fp:/head-->";
+
+/// A page shell lacks a mark the fragment needs.
+#[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MissingMark {
+    /// The shell has no [`BODY_MARK`].
+    #[error("shell has no body mark")]
+    Body,
+    /// The fragment has a head part but the shell has no [`HEAD_MARK`] before its body mark.
+    #[error("shell has no head mark before its body mark")]
+    Head,
+}
+
 // Browsers revalidate after a minute; the edge keeps a day and relies on invalidation.
 const CACHEABLE: &str = "public, max-age=60, s-maxage=86400";
 
@@ -52,6 +70,9 @@ pub enum PortError {
     /// A page shell has no body mark.
     #[error("page shell {0} has no body mark")]
     NoBodyMark(Box<str>),
+    /// A page fragment carries a head part but its shell has no head mark.
+    #[error("page shell {0} has no head mark")]
+    NoHeadMark(Box<str>),
 }
 
 /// Request method as far as the read path cares.
@@ -181,13 +202,91 @@ fn fetch<B: Blobs>(blobs: &mut B, key: &BlobKey) -> Result<Vec<u8>, PortError> {
 }
 
 fn page(shell: &[u8], shell_key: &BlobKey, body: &[u8]) -> Result<Vec<u8>, PortError> {
-    let at = shell
-        .windows(BODY_MARK.len())
-        .position(|window| window == BODY_MARK)
-        .ok_or_else(|| PortError::NoBodyMark(shell_key.as_str().into()))?;
-    let mut out = Vec::with_capacity(shell.len() - BODY_MARK.len() + body.len());
-    out.extend_from_slice(&shell[..at]);
+    assemble(shell, body).map_err(|missing| {
+        let key = shell_key.as_str().into();
+        match missing {
+            MissingMark::Body => PortError::NoBodyMark(key),
+            MissingMark::Head => PortError::NoHeadMark(key),
+        }
+    })
+}
+
+/// Assembles a page from its shell and fragment: the fragment's head part (everything before
+/// [`HEAD_END`], if present) replaces [`HEAD_MARK`], the rest replaces [`BODY_MARK`]. A shell's
+/// head mark with no head part in the fragment is removed. The projector hashes this output, so
+/// entity tags cover exactly the served bytes.
+///
+/// # Errors
+///
+/// [`MissingMark`] when the shell lacks a mark the fragment needs.
+pub fn assemble(shell: &[u8], fragment: &[u8]) -> Result<Vec<u8>, MissingMark> {
+    let (head, body) = match find(fragment, HEAD_END) {
+        Some(at) => (&fragment[..at], &fragment[at + HEAD_END.len()..]),
+        None => (&fragment[..0], fragment),
+    };
+    let body_at = find(shell, BODY_MARK).ok_or(MissingMark::Body)?;
+    // Only a head mark ahead of the body mark counts; the head precedes `<main>` in every shell.
+    let head_at = find(&shell[..body_at], HEAD_MARK);
+    if head_at.is_none() && !head.is_empty() {
+        return Err(MissingMark::Head);
+    }
+    let mut out = Vec::with_capacity(shell.len() + fragment.len());
+    let rest = match head_at {
+        Some(at) => {
+            out.extend_from_slice(&shell[..at]);
+            out.extend_from_slice(head);
+            at + HEAD_MARK.len()
+        }
+        None => 0,
+    };
+    out.extend_from_slice(&shell[rest..body_at]);
     out.extend_from_slice(body);
-    out.extend_from_slice(&shell[at + BODY_MARK.len()..]);
+    out.extend_from_slice(&shell[body_at + BODY_MARK.len()..]);
     Ok(out)
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MissingMark, assemble};
+
+    #[test]
+    fn fragments_fill_the_head_and_body_marks() {
+        let shell = b"<head><!--fp:head--></head><main><!--fp:body--></main>";
+        assert_eq!(
+            assemble(shell, b"<title>T</title><!--fp:/head--><h1>B</h1>"),
+            Ok(b"<head><title>T</title></head><main><h1>B</h1></main>".to_vec())
+        );
+        assert_eq!(
+            assemble(shell, b"<h1>B</h1>"),
+            Ok(b"<head></head><main><h1>B</h1></main>".to_vec())
+        );
+        assert_eq!(
+            assemble(b"<main><!--fp:body--></main>", b"<h1>B</h1>"),
+            Ok(b"<main><h1>B</h1></main>".to_vec())
+        );
+    }
+
+    #[test]
+    fn missing_marks_are_errors() {
+        assert_eq!(assemble(b"<main></main>", b"x"), Err(MissingMark::Body));
+        assert_eq!(
+            assemble(b"<main><!--fp:body--></main>", b"t<!--fp:/head-->x"),
+            Err(MissingMark::Head)
+        );
+        assert_eq!(
+            assemble(b"<!--fp:body--><!--fp:head-->", b"t<!--fp:/head-->x"),
+            Err(MissingMark::Head)
+        );
+        assert_eq!(MissingMark::Body.to_string(), "shell has no body mark");
+        assert_eq!(
+            MissingMark::Head.to_string(),
+            "shell has no head mark before its body mark"
+        );
+    }
 }

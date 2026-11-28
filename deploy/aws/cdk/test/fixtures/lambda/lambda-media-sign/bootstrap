@@ -1,0 +1,2 @@
+Synth/test fixture for the CDK app: stands in for the CI-built aarch64 bootstrap of lambda-media-sign.
+Never deployed; see deploy/aws/cdk/README.md.
