@@ -311,6 +311,17 @@ markers resolve through its `CardSource` port. Nothing serves placeholder HTML.
   `tick|action|uid|token`. The key is the nonce key followed by the nonce salt, and the token is
   the `fp_session` value. A tick is 12 hours (`ceil(now / 43200)`), and the current and previous
   ticks are accepted.
+- **Auth Lambda routes** (`apps/lambda-auth`):
+  - `GET <base>login` serves the form;
+  - `POST <base>login` (`log`, `pwd`, `rememberme=forever`, `redirect_to`) answers 302 with
+    the cookie. Wrong user and wrong password get one message, and a flood gets 429;
+  - `POST <base>login/logout` needs the session's `log-out` nonce in `_wpnonce`.
+
+  Replies are `no-store`. `redirect_to` is followed only when it is a path under the base
+  with no `//`. The client address is the last `X-Forwarded-For` entry, which CloudFront
+  appends. The nonce key is the site secret string followed by `nonce`. The secret, the
+  sessions table and the limits table come from `FP_SECRET_ARN`, `FP_SESSIONS_TABLE` and
+  `FP_LIMITS_TABLE`. The binary entry point lands with the DSQL `Store` (phase 4).
 - **Session-token usermeta divergence.** The reference keeps each user's sessions in the
   `session_tokens` usermeta row (verifier hash to expiration, IP, UA, login time). In the
   serverless profile sessions live only in the DynamoDB sessions table. That usermeta row is

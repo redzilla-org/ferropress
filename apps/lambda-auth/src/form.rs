@@ -2,7 +2,7 @@
 
 /// The value of the first `name` field, percent- and plus-decoded; `None` when absent.
 #[must_use]
-pub fn field(body: &[u8], name: &str) -> Option<Vec<u8>> {
+pub(crate) fn field(body: &[u8], name: &str) -> Option<Vec<u8>> {
     body.split(|&b| b == b'&')
         .filter_map(|pair| {
             let mut parts = pair.splitn(2, |&b| b == b'=');
@@ -14,11 +14,19 @@ pub fn field(body: &[u8], name: &str) -> Option<Vec<u8>> {
 
 // `+` is a space; `%XX` is a byte; a malformed escape is kept literally, as PHP does.
 fn decode(bytes: &[u8]) -> Vec<u8> {
-    let hex = |b: u8| char::from(b).to_digit(16).and_then(|d| u8::try_from(d).ok());
+    let hex = |b: u8| {
+        char::from(b)
+            .to_digit(16)
+            .and_then(|d| u8::try_from(d).ok())
+    };
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while let Some(&b) = bytes.get(i) {
-        match (b, bytes.get(i + 1).copied().and_then(hex), bytes.get(i + 2).copied().and_then(hex)) {
+        match (
+            b,
+            bytes.get(i + 1).copied().and_then(hex),
+            bytes.get(i + 2).copied().and_then(hex),
+        ) {
             (b'%', Some(high), Some(low)) => {
                 out.push(high << 4 | low);
                 i += 3;
@@ -34,7 +42,7 @@ fn decode(bytes: &[u8]) -> Vec<u8> {
 
 /// `text` safe inside HTML text and double-quoted attributes.
 #[must_use]
-pub fn escape(text: &str) -> String {
+pub(crate) fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         match c {
@@ -66,6 +74,9 @@ mod tests {
 
     #[test]
     fn escape_covers_markup_and_quotes() {
-        assert_eq!(escape(r#"<a href="x">'&'</a>"#), "&lt;a href=&quot;x&quot;&gt;&#039;&amp;&#039;&lt;/a&gt;");
+        assert_eq!(
+            escape(r#"<a href="x">'&'</a>"#),
+            "&lt;a href=&quot;x&quot;&gt;&#039;&amp;&#039;&lt;/a&gt;"
+        );
     }
 }

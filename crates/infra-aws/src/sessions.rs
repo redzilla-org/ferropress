@@ -72,11 +72,15 @@ impl SessionStore for SessionsTable {
             "expires": { "N": session.expires.to_string() },
             "agent": { "S": session.agent },
         }));
-        self.db.put_item(&self.table, stored).map_err(down)
+        self.db.put_item(&self.table, &stored).map_err(down)
     }
 
     fn get(&mut self, digest: &TokenDigest) -> Result<Option<Session>, Error> {
-        match self.db.get_item(&self.table, &key(digest.as_str())).map_err(down)? {
+        match self
+            .db
+            .get_item(&self.table, &key(digest.as_str()))
+            .map_err(down)?
+        {
             None => Ok(None),
             Some(found) => decode(&found).map(Some).ok_or(Error::Unavailable),
         }
@@ -100,7 +104,9 @@ impl SessionStore for SessionsTable {
                 .map_err(down)?;
             for found in &page.items {
                 let digest = text(found, "pk", "S").ok_or(Error::Unavailable)?;
-                self.db.delete_item(&self.table, &key(digest)).map_err(down)?;
+                self.db
+                    .delete_item(&self.table, &key(digest))
+                    .map_err(down)?;
                 removed += 1;
             }
             match page.next {

@@ -558,7 +558,10 @@ fn sessions_table_puts_gets_deletes_and_deletes_by_user() {
         json!({ "TableName": "fp-sessions", "Item": stored })
     );
     assert_eq!(seen[1].header("x-amz-target"), "DynamoDB_20120810.GetItem");
-    assert_eq!(seen[4].header("x-amz-target"), "DynamoDB_20120810.DeleteItem");
+    assert_eq!(
+        seen[4].header("x-amz-target"),
+        "DynamoDB_20120810.DeleteItem"
+    );
     assert_eq!(
         seen[5].json(),
         json!({ "TableName": "fp-sessions", "IndexName": "user_id",
@@ -597,7 +600,10 @@ fn limits_table_increments_atomically() {
     assert_eq!(limits.increment(&key), Ok(3));
     assert_eq!(limits.increment(&key), Err(cms_session::Error::Unavailable));
     let seen = finish(server);
-    assert_eq!(seen[0].header("x-amz-target"), "DynamoDB_20120810.UpdateItem");
+    assert_eq!(
+        seen[0].header("x-amz-target"),
+        "DynamoDB_20120810.UpdateItem"
+    );
     assert_eq!(
         seen[0].json(),
         json!({ "TableName": "fp-limits",
@@ -623,7 +629,10 @@ fn secrets_are_read_as_strings() {
         Err(AwsError::Malformed { .. })
     ));
     let seen = finish(server);
-    assert_eq!(seen[0].header("x-amz-target"), "secretsmanager.GetSecretValue");
+    assert_eq!(
+        seen[0].header("x-amz-target"),
+        "secretsmanager.GetSecretValue"
+    );
     assert_eq!(seen[0].header("content-type"), "application/x-amz-json-1.1");
     assert_eq!(seen[0].json(), json!({ "SecretId": "arn:x" }));
     assert_signed(&seen[0], "secretsmanager", "us-west-2", PathStyle::Standard);

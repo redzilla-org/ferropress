@@ -59,7 +59,10 @@ pub fn run<S: Store, T: SessionStore, R: RateLimiter, E: Entropy>(
             .as_secs();
         let outcome = decode(&payload)
             .map_err(|error| error.to_string())
-            .and_then(|request| auth.handle(&request, now).map_err(|error| error.to_string()))
+            .and_then(|request| {
+                auth.handle(&request, now)
+                    .map_err(|error| error.to_string())
+            })
             .map(encode);
         let (path, body) = match outcome {
             Ok(body) => ("response", body),

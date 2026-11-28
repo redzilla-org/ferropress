@@ -64,10 +64,12 @@ impl std::fmt::Debug for AuthReply {
 ///
 /// [`EventError`] naming the missing or malformed field.
 pub fn decode(payload: &[u8]) -> Result<AuthRequest, EventError> {
-    let event: Value = serde_json::from_slice(payload).map_err(|_not_json| EventError("not JSON"))?;
+    let event: Value =
+        serde_json::from_slice(payload).map_err(|_not_json| EventError("not JSON"))?;
     let text = |pointer: &str| event.pointer(pointer).and_then(Value::as_str);
     let path = text("/rawPath").ok_or(EventError("rawPath"))?;
-    let method = text("/requestContext/http/method").ok_or(EventError("requestContext.http.method"))?;
+    let method =
+        text("/requestContext/http/method").ok_or(EventError("requestContext.http.method"))?;
     let cookie = match event.get("cookies") {
         None => String::new(),
         Some(Value::Array(cookies)) => cookies
@@ -173,7 +175,10 @@ mod tests {
         let plain = br#"{"rawPath":"/blog/login","body":"x=1",
             "requestContext":{"http":{"method":"GET","sourceIp":"203.0.113.1"}}}"#;
         let request = decode(plain).unwrap();
-        assert_eq!((request.ip.as_str(), &request.body[..]), ("203.0.113.1", &b"x=1"[..]));
+        assert_eq!(
+            (request.ip.as_str(), &request.body[..]),
+            ("203.0.113.1", &b"x=1"[..])
+        );
         assert!(request.cookie.is_empty());
     }
 
@@ -231,7 +236,11 @@ mod tests {
             ("Zm9vYmE=", "fooba"),
             ("Zm9vYmFy", "foobar"),
         ] {
-            assert_eq!(base64_decode(encoded), Some(plain.as_bytes().to_vec()), "{encoded}");
+            assert_eq!(
+                base64_decode(encoded),
+                Some(plain.as_bytes().to_vec()),
+                "{encoded}"
+            );
         }
         assert_eq!(base64_decode("Z"), None);
         assert_eq!(base64_decode("Z-=="), None);

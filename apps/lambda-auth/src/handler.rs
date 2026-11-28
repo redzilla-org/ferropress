@@ -51,12 +51,14 @@ impl<S: Store, T: SessionStore, R: RateLimiter, E: Entropy> Auth<S, T, R, E> {
             (Some("login/logout"), "POST") => self.logout(request, now),
             (Some("login"), _) => Ok(not_allowed("GET, POST")),
             (Some("login/logout"), _) => Ok(not_allowed("POST")),
-            _ => Ok(page(404, "<p>Not found.</p>".to_owned())),
+            _ => Ok(page(404, "<p>Not found.</p>")),
         }
     }
 
     fn post_login(&mut self, request: &AuthRequest, now: u64) -> Result<AuthReply, Error> {
-        let text = |name| String::from_utf8_lossy(&field(&request.body, name).unwrap_or_default()).into_owned();
+        let text = |name| {
+            String::from_utf8_lossy(&field(&request.body, name).unwrap_or_default()).into_owned()
+        };
         let login = text("log");
         let redirect = text("redirect_to");
         let attempt = LoginRequest {
@@ -101,10 +103,24 @@ impl<S: Store, T: SessionStore, R: RateLimiter, E: Entropy> Auth<S, T, R, E> {
     fn logout(&mut self, request: &AuthRequest, now: u64) -> Result<AuthReply, Error> {
         // A live session is only ended with its own nonce, so a cross-site POST cannot log out.
         if let Some(current) = self.login.resolve(&request.cookie, now)? {
-            let nonce = String::from_utf8_lossy(&field(&request.body, "_wpnonce").unwrap_or_default()).into_owned();
+            let nonce =
+                String::from_utf8_lossy(&field(&request.body, "_wpnonce").unwrap_or_default())
+                    .into_owned();
             let uid = current.user.id().as_u64();
-            if verify_nonce(&self.nonce, &nonce, LOGOUT_ACTION, uid, Some(&current.token), now).is_none() {
-                return Ok(page(403, "<p>The link you followed has expired.</p>".to_owned()));
+            if verify_nonce(
+                &self.nonce,
+                &nonce,
+                LOGOUT_ACTION,
+                uid,
+                Some(&current.token),
+                now,
+            )
+            .is_none()
+            {
+                return Ok(page(
+                    403,
+                    "<p>The link you followed has expired.</p>",
+                ));
             }
         }
         let clear = self.login.logout(&request.cookie)?;
@@ -159,7 +175,7 @@ impl<S: Store, T: SessionStore, R: RateLimiter, E: Entropy> Auth<S, T, R, E> {
         };
         page(
             status,
-            format!(
+            &format!(
                 "<h1>Log in</h1>{notice}<form method=\"post\" action=\"{action}\">\
                  <p><label for=\"user_login\">Username or Email Address</label>\
                  <input type=\"text\" name=\"log\" id=\"user_login\" value=\"{login}\" autocomplete=\"username\" required></p>\
@@ -177,13 +193,13 @@ impl<S: Store, T: SessionStore, R: RateLimiter, E: Entropy> Auth<S, T, R, E> {
 }
 
 fn not_allowed(allow: &str) -> AuthReply {
-    let mut reply = page(405, "<p>Method not allowed.</p>".to_owned());
+    let mut reply = page(405, "<p>Method not allowed.</p>");
     reply.headers.push(("allow", allow.to_owned()));
     reply
 }
 
 // Every auth page is personal: never cached, never framed.
-fn page(status: u16, main: String) -> AuthReply {
+fn page(status: u16, main: &str) -> AuthReply {
     AuthReply {
         status,
         headers: vec![

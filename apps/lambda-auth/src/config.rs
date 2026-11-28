@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use cms_session::{CookiePath, NonceKey};
 use infra_aws::{
-    AwsClient, AwsError, ConfigError, DynamoDb, Endpoint, Environment, LimitsTable,
-    SecretsManager, SessionsTable, required,
+    AwsClient, AwsError, ConfigError, DynamoDb, Endpoint, Environment, LimitsTable, SecretsManager,
+    SessionsTable, required,
 };
 
 // The function timeout is 10 s; a login makes at most about six AWS calls.
@@ -59,11 +59,11 @@ impl Config {
         let base = CookiePath::new(&base)
             .filter(|_| base.ends_with('/'))
             .ok_or(ConfigError::Invalid("FP_BASE_PATH"))?;
-        let endpoint = |name: &'static str, regional: Endpoint| {
-            match lookup(name).filter(|value| !value.is_empty()) {
-                Some(url) => Endpoint::parse(&url).map_err(|_bad| ConfigError::Invalid(name)),
-                None => Ok(regional),
-            }
+        let endpoint = |name: &'static str, regional: Endpoint| match lookup(name)
+            .filter(|value| !value.is_empty())
+        {
+            Some(url) => Endpoint::parse(&url).map_err(|_bad| ConfigError::Invalid(name)),
+            None => Ok(regional),
         };
         Ok(Self {
             runtime_api: required(&lookup, "AWS_LAMBDA_RUNTIME_API")?,
@@ -127,7 +127,10 @@ mod tests {
                 ("FP_BASE_PATH", "/blog/"),
                 ("FP_SESSIONS_TABLE", "fp-sessions"),
                 ("FP_LIMITS_TABLE", "fp-limits"),
-                ("FP_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:1:secret:s"),
+                (
+                    "FP_SECRET_ARN",
+                    "arn:aws:secretsmanager:us-east-1:1:secret:s",
+                ),
             ]
             .iter()
             .chain(extra)
@@ -140,8 +143,14 @@ mod tests {
     #[test]
     fn defaults_use_regional_endpoints_and_overrides_point_at_emulators() {
         let config = Config::from_lookup(lookup(&[])).unwrap();
-        assert_eq!(config.dynamodb, Endpoint::https("dynamodb.us-east-1.amazonaws.com"));
-        assert_eq!(config.secrets, Endpoint::https("secretsmanager.us-east-1.amazonaws.com"));
+        assert_eq!(
+            config.dynamodb,
+            Endpoint::https("dynamodb.us-east-1.amazonaws.com")
+        );
+        assert_eq!(
+            config.secrets,
+            Endpoint::https("secretsmanager.us-east-1.amazonaws.com")
+        );
         assert_eq!(config.base.as_str(), "/blog/");
         let local = Config::from_lookup(lookup(&[
             ("FP_DYNAMODB_ENDPOINT", "http://127.0.0.1:8000"),
@@ -168,7 +177,9 @@ mod tests {
         }
         assert_eq!(
             Config::from_lookup(lookup(&[("FP_SECRETS_ENDPOINT", "ftp://x")])),
-            Err(StartError::Config(ConfigError::Invalid("FP_SECRETS_ENDPOINT")))
+            Err(StartError::Config(ConfigError::Invalid(
+                "FP_SECRETS_ENDPOINT"
+            )))
         );
         assert_eq!(
             Config::from_lookup(lookup(&[("FP_SECRET_ARN", "")])).map_err(|e| e.to_string()),

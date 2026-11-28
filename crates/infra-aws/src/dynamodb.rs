@@ -139,7 +139,7 @@ impl DynamoDb {
     /// # Errors
     ///
     /// [`AwsError`] when the call fails.
-    pub fn put_item(&self, table: &str, item: Item) -> Result<(), AwsError> {
+    pub fn put_item(&self, table: &str, item: &Item) -> Result<(), AwsError> {
         self.call(
             "DynamoDB.PutItem",
             "PutItem",
