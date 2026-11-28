@@ -390,6 +390,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cms-projector"
+version = "0.0.0"
+dependencies = [
+ "cms-db",
+ "cms-outbox",
+ "cms-readmodel",
+ "cms-render",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+]
+
+[[package]]
 name = "cms-query"
 version = "0.0.0"
 dependencies = [
@@ -900,6 +913,20 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "lambda-project"
+version = "0.0.0"
+dependencies = [
+ "cms-db",
+ "cms-projector",
+ "cms-readmodel",
+ "cms-render",
+ "infra-aws",
+ "serde_json",
+ "thiserror",
+ "ureq",
 ]
 
 [[package]]
