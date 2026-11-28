@@ -890,6 +890,7 @@ name = "lambda-read"
 version = "0.0.0"
 dependencies = [
  "cms-readmodel",
+ "infra-aws",
  "serde_json",
  "thiserror",
  "ureq",
