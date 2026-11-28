@@ -1,6 +1,7 @@
 //! The real composition root end to end: environment -> `DynamoDB`/S3 adapters -> Runtime API
-//! loop, against two fake HTTP servers on 127.0.0.1 (one Runtime API, one AWS). Two warm
-//! invocations of the same post fetch its shell once.
+//! loop, against two fake HTTP servers on 127.0.0.1 (one Runtime API, one AWS). Warm
+//! invocations serve the home page, a post, a category archive, the feed and the sitemap, and
+//! fetch the shared page shell once.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
@@ -55,38 +56,124 @@ fn fake(replies: Vec<(String, String)>) -> (String, JoinHandle<Seen>) {
     (addr, handle)
 }
 
-const EVENT: &str = r#"{"version":"2.0","rawPath":"/blog/hello/","headers":{},"requestContext":{"http":{"method":"GET"}}}"#;
+const SHELL: &str = "site/fragments/shell/s1.html";
+const HTML: &str = "text/html; charset=UTF-8";
+
+/// One published route: its path, item content, content type, body object key and bytes.
+struct Published {
+    path: &'static str,
+    content_type: &'static str,
+    body_key: &'static str,
+    body: &'static str,
+    page: bool,
+}
+
+// What the projector publishes for each kind of public URL the read path serves.
+const SITE: [Published; 5] = [
+    Published {
+        path: "/blog/",
+        content_type: HTML,
+        body_key: "site/rendered/home.html",
+        body: "<h1>Latest posts</h1>",
+        page: true,
+    },
+    Published {
+        path: "/blog/2026/11/hello/",
+        content_type: HTML,
+        body_key: "site/rendered/p1.html",
+        body: "<h1>Hello</h1>",
+        page: true,
+    },
+    Published {
+        path: "/blog/category/news/",
+        content_type: HTML,
+        body_key: "site/rendered/category-news.html",
+        body: "<h1>Category: News</h1>",
+        page: true,
+    },
+    Published {
+        path: "/blog/feed/",
+        content_type: "application/rss+xml; charset=UTF-8",
+        body_key: "site/rendered/feed.xml",
+        body: "<rss version=\"2.0\"><channel><item><title>Hello</title></item></channel></rss>",
+        page: false,
+    },
+    Published {
+        path: "/blog/sitemap.xml",
+        content_type: "application/xml; charset=UTF-8",
+        body_key: "site/rendered/sitemap.xml",
+        body: "<urlset><url><loc>https://example.test/blog/2026/11/hello/</loc></url></urlset>",
+        page: false,
+    },
+];
+
+impl Published {
+    /// The `GetItem` reply holding this route item.
+    fn item(&self) -> String {
+        let body = self.body_key.into();
+        let content = if self.page {
+            Content::Page {
+                shell: SHELL.into(),
+                body,
+            }
+        } else {
+            Content::Object { body }
+        };
+        let route = Route {
+            status: 200,
+            content_type: self.content_type.into(),
+            etag: "\"e1\"".into(),
+            last_modified: "Fri, 27 Nov 2026 00:00:00 GMT".into(),
+            content,
+        };
+        json!({ "Item": infra_aws::encode_route(&RouteKey::from(self.path), &route) }).to_string()
+    }
+
+    /// The bytes a client receives.
+    fn served(&self) -> String {
+        if self.page {
+            format!("<main>{}</main>", self.body)
+        } else {
+            self.body.to_owned()
+        }
+    }
+
+    /// The Function URL event requesting this path.
+    fn event(&self) -> String {
+        json!({
+            "version": "2.0",
+            "rawPath": self.path,
+            "headers": {},
+            "requestContext": { "http": { "method": "GET" } },
+        })
+        .to_string()
+    }
+}
 
 #[test]
-fn warm_invocations_serve_a_post_and_reuse_the_shell() {
-    let route = Route {
-        status: 200,
-        content_type: "text/html; charset=UTF-8".into(),
-        etag: "\"e1\"".into(),
-        last_modified: "Fri, 27 Nov 2026 00:00:00 GMT".into(),
-        content: Content::Page {
-            shell: "site/fragments/shell/s1.html".into(),
-            body: "site/rendered/p1.html".into(),
-        },
-    };
-    let item = json!({ "Item": infra_aws::encode_route(&RouteKey::from("/blog/hello/"), &route) })
-        .to_string();
+fn warm_invocations_serve_every_route_kind_and_reuse_the_shell() {
+    // AWS sees GetItem then the shell (first page only) and the body object per invocation.
     let ok = || "200 OK\r\n".to_owned();
-    let (aws, aws_server) = fake(vec![
-        (ok(), item.clone()),
-        (ok(), "<main><!--fp:body--></main>".to_owned()),
-        (ok(), "<h1>Hello</h1>".to_owned()),
-        (ok(), item),
-        (ok(), "<h1>Hello</h1>".to_owned()),
-    ]);
-    let next = || {
-        (
-            "200 OK\r\nlambda-runtime-aws-request-id: req-1\r\n".to_owned(),
-            EVENT.to_owned(),
-        )
-    };
-    let accepted = || ("202 Accepted\r\n".to_owned(), String::new());
-    let (api, api_server) = fake(vec![next(), accepted(), next(), accepted()]);
+    let mut aws_replies = Vec::new();
+    let mut expected_aws = Vec::new();
+    let mut api_replies = Vec::new();
+    for (n, published) in SITE.iter().enumerate() {
+        aws_replies.push((ok(), published.item()));
+        expected_aws.push("POST / HTTP/1.1".to_owned());
+        if n == 0 {
+            aws_replies.push((ok(), "<main><!--fp:body--></main>".to_owned()));
+            expected_aws.push(format!("GET /site-bucket/{SHELL} HTTP/1.1"));
+        }
+        aws_replies.push((ok(), published.body.to_owned()));
+        expected_aws.push(format!("GET /site-bucket/{} HTTP/1.1", published.body_key));
+        api_replies.push((
+            format!("200 OK\r\nlambda-runtime-aws-request-id: req-{n}\r\n"),
+            published.event(),
+        ));
+        api_replies.push(("202 Accepted\r\n".to_owned(), String::new()));
+    }
+    let (aws, aws_server) = fake(aws_replies);
+    let (api, api_server) = fake(api_replies);
 
     let endpoint = format!("http://{aws}");
     let config = Config::from_lookup(|name| {
@@ -108,36 +195,41 @@ fn warm_invocations_serve_a_post_and_reuse_the_shell() {
     let Ok(config) = config else {
         return;
     };
-    // The fake Runtime API closes after two invocations, which ends the loop.
+    // The fake Runtime API closes after the last invocation, which ends the loop.
     assert!(matches!(
         start(config),
         Err(StartError::Runtime(RuntimeError::Http(_)))
     ));
 
+    // Each invocation's response carries the route's status, content type and assembled bytes.
     let api_seen = api_server.join().unwrap_or_default();
-    assert_eq!(api_seen.len(), 4);
-    for posted in [&api_seen[1], &api_seen[3]] {
-        assert!(
-            posted
-                .0
-                .starts_with("POST /2018-06-01/runtime/invocation/req-1/response ")
-        );
+    assert_eq!(api_seen.len(), 2 * SITE.len());
+    for (n, published) in SITE.iter().enumerate() {
+        let posted = &api_seen[2 * n + 1];
+        assert!(posted.0.starts_with(&format!(
+            "POST /2018-06-01/runtime/invocation/req-{n}/response "
+        )));
         let response: Value = serde_json::from_slice(&posted.1).unwrap_or(Value::Null);
-        assert_eq!(response["statusCode"], 200);
-        assert_eq!(response["body"], "<main><h1>Hello</h1></main>");
+        assert_eq!(response["statusCode"], 200, "{}", published.path);
+        assert_eq!(response["headers"]["content-type"], published.content_type);
+        assert_eq!(response["body"], published.served());
     }
+
+    // The table is asked for exactly each requested route; the shell is fetched once.
     let aws_seen = aws_server.join().unwrap_or_default();
     let lines: Vec<&str> = aws_seen.iter().map(|(line, _)| line.trim_end()).collect();
-    assert_eq!(
-        lines,
-        [
-            "POST / HTTP/1.1",
-            "GET /site-bucket/site/fragments/shell/s1.html HTTP/1.1",
-            "GET /site-bucket/site/rendered/p1.html HTTP/1.1",
-            "POST / HTTP/1.1",
-            "GET /site-bucket/site/rendered/p1.html HTTP/1.1",
-        ]
-    );
+    assert_eq!(lines, expected_aws);
+    let asked: Vec<Value> = aws_seen
+        .iter()
+        .filter(|(line, _)| line.starts_with("POST "))
+        .map(|(_, body)| serde_json::from_slice::<Value>(body).unwrap_or(Value::Null))
+        .map(|request| request["Key"]["pk"]["S"].clone())
+        .collect();
+    let wanted: Vec<Value> = SITE
+        .iter()
+        .map(|published| Value::from(format!("ROUTE#{}", published.path)))
+        .collect();
+    assert_eq!(asked, wanted);
 }
 
 #[test]
