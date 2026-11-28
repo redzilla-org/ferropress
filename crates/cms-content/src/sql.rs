@@ -122,10 +122,7 @@ pub(crate) fn update_row(
         sql.ident(field.column()).raw(" = ");
         format_cell(&mut sql, *field, draft.get(*field));
     }
-    sql.raw(" WHERE ")
-        .ident(ID)
-        .raw(" = ")
-        .number(id.as_u64());
+    sql.raw(" WHERE ").ident(ID).raw(" = ").number(id.as_u64());
     sql.finish()
 }
 

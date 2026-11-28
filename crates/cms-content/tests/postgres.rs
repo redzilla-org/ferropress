@@ -67,5 +67,6 @@ fn postgres_refuses_nul_before_the_server() {
         let mut draft = Draft::new();
         draft.set(Field::Content, b"a\0b");
         assert!(matches!(posts.insert(&draft), Err(Error::Literal(_))));
-        assert!(matches!(posts.update(id, &draft), Err(Error::Literal(_))));    }
+        assert!(matches!(posts.update(id, &draft), Err(Error::Literal(_))));
+    }
 }
