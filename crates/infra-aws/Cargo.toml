@@ -1,0 +1,21 @@
+[package]
+name = "infra-aws"
+description = "AWS adapters without the AWS SDK: SigV4, DynamoDB, S3 and CloudFront over blocking HTTPS"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Linked into the tiny read Lambda, so no async runtime and no SDK: ureq with rustls (ring,
+# webpki roots) for HTTPS, sha2 for SigV4, serde_json for the DynamoDB JSON protocol.
+[dependencies]
+cms-readmodel = { path = "../cms-readmodel" }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+ureq = { workspace = true, features = ["rustls"] }
+
+[lints]
+workspace = true
