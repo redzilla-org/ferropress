@@ -15,9 +15,6 @@ pub enum RuntimeError {
     /// `next` returned no request id header.
     #[error("runtime API sent no request id")]
     NoRequestId,
-    /// The metrics line could not be written.
-    #[error("metrics sink failed: {0}")]
-    Metrics(Box<str>),
 }
 
 /// An invocation payload that is neither the empty nudge nor a JSON object.
@@ -64,7 +61,7 @@ pub fn summary(report: &Report) -> Value {
 ///
 /// # Errors
 ///
-/// [`RuntimeError`] only when the Runtime API or the metrics sink fails.
+/// [`RuntimeError`] only when the Runtime API fails.
 pub fn run<J, W>(api: &str, clock: &dyn Clock, metrics: &mut W, mut job: J) -> Result<(), RuntimeError>
 where
     J: FnMut() -> Result<Report, ProjectError>,
@@ -88,16 +85,19 @@ where
             .body_mut()
             .read_to_vec()
             .map_err(|error| http(&error))?;
-        let outcome = trigger(&payload)
-            .map_err(|error| error.to_string())
-            .and_then(|()| job().map_err(|error| error.to_string()));
-        let (path, body) = match outcome {
-            Ok(report) => {
+        let outcome = trigger(&payload).map_err(|error| error.to_string()).and_then(|()| {
+            // A full batch nudges; keep draining in this invocation, one EMF line per run.
+            loop {
+                let report = job().map_err(|error| error.to_string())?;
                 let line = emf_line(clock.now_micros(), report.age_seconds, report.rows);
-                writeln!(metrics, "{line}")
-                    .map_err(|error| RuntimeError::Metrics(error.to_string().into()))?;
-                ("response", summary(&report))
+                writeln!(metrics, "{line}").map_err(|error| format!("metrics sink: {error}"))?;
+                if !report.nudged {
+                    return Ok(report);
+                }
             }
+        });
+        let (path, body) = match outcome {
+            Ok(report) => ("response", summary(&report)),
             Err(message) => (
                 "error",
                 json!({ "errorMessage": message, "errorType": "ProjectorError" }),

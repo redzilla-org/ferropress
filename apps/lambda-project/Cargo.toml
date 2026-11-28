@@ -9,9 +9,14 @@ license.workspace = true
 repository.workspace = true
 
 # Same shape as lambda-read: blocking ureq against the local Runtime API, no async runtime and
-# no AWS SDK. The job itself is cms-projector over ports.
+# no AWS SDK. The job is cms-projector over ports; infra-aws supplies the S3, DynamoDB and
+# CloudFront adapters.
 [dependencies]
+cms-db = { workspace = true }
 cms-projector = { path = "../../crates/cms-projector" }
+cms-readmodel = { path = "../../crates/cms-readmodel" }
+cms-render = { path = "../../crates/cms-render" }
+infra-aws = { path = "../../crates/infra-aws" }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 ureq = { workspace = true }
