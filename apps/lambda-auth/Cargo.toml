@@ -1,0 +1,27 @@
+[package]
+name = "lambda-auth"
+description = "Auth Lambda: login form, login, logout and sessions for the serverless profile"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Same shape as lambda-read: blocking, no async runtime, no AWS SDK. cms-session holds the
+# auth domain; infra-aws provides the sessions/limits tables and the site secret.
+[dependencies]
+cms-db = { workspace = true }
+cms-session = { workspace = true }
+cms-users = { workspace = true }
+infra-aws = { path = "../../crates/infra-aws" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ureq = { workspace = true }
+
+[dev-dependencies]
+cms-db = { workspace = true, features = ["test-util"] }
+cms-session = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
