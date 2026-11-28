@@ -1,0 +1,24 @@
+[package]
+name = "cms-import"
+description = "Streaming WXR import into the content, taxonomy, user and comment tables"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cms-comments = { workspace = true }
+cms-content = { workspace = true }
+cms-db = { workspace = true }
+cms-taxonomy = { workspace = true }
+cms-users = { workspace = true }
+quick-xml = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true
