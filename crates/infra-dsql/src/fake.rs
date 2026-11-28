@@ -344,7 +344,7 @@ fn converse(
         Greeting::Frames(frames) => {
             record(log, |seen| {
                 seen.logins
-                    .push((param("user"), param("database"), String::new()))
+                    .push((param("user"), param("database"), String::new()));
             });
             send(stream, &frames.0)?;
             return drain(stream);
@@ -356,7 +356,7 @@ fn converse(
                 String::from_utf8_lossy(body.strip_suffix(&[0]).unwrap_or(&body)).into_owned();
             record(log, |seen| {
                 seen.logins
-                    .push((param("user"), param("database"), password.clone()))
+                    .push((param("user"), param("database"), password.clone()));
             });
             if kind != b'p' || password != *expected {
                 return send(
@@ -384,7 +384,7 @@ fn converse(
         let sql = body.strip_suffix(&[0]).unwrap_or(&body).to_vec();
         record(log, |seen| {
             seen.statements
-                .push(String::from_utf8_lossy(&sql).into_owned())
+                .push(String::from_utf8_lossy(&sql).into_owned());
         });
         match steps.pop_front() {
             Some((expected, frames)) if *expected == sql => send(stream, &frames.0)?,

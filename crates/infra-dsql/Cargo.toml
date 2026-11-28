@@ -8,9 +8,11 @@ publish.workspace = true
 license.workspace = true
 repository.workspace = true
 
+# test-util ships the in-process fake PostgreSQL server so tests never need a live DSQL cluster.
 [features]
 test-util = []
 
+# Infrastructure layer: only the cms-db port, plus rustls because DSQL requires TLS.
 [dependencies]
 cms-db = { workspace = true }
 rustls = { workspace = true }
@@ -23,6 +25,7 @@ cms-db = { workspace = true, features = ["test-util"] }
 [lints]
 workspace = true
 
+# The wire tests drive the fake server, which only exists under test-util.
 [[test]]
 name = "store"
 required-features = ["test-util"]

@@ -1,6 +1,6 @@
-//! The DSQL adapter against the in-process fake PostgreSQL server (plain TCP on 127.0.0.1).
+//! The DSQL adapter against the in-process fake `PostgreSQL` server (plain TCP on 127.0.0.1).
 //!
-//! Frame shapes follow the PostgreSQL v3 protocol documentation ("Message Formats" and "Simple
+//! Frame shapes follow the `PostgreSQL` v3 protocol documentation ("Message Formats" and "Simple
 //! Query"); DSQL conflict codes OC000/OC001 come from the DSQL concurrency-control docs.
 
 use std::time::Duration;
@@ -437,9 +437,10 @@ fn tls_refusals_untrusted_servers_and_odd_answers_fail_the_connect() {
     ));
 }
 
-fn core() -> Vec<Migration> {
+// The shipped schema, so the end-to-end run exercises the real files.
+fn core() -> Result<Vec<Migration>, MigrateError> {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../deploy/aws/dsql");
-    Migration::load_dir(&dir).expect("migrations parse")
+    Migration::load_dir(&dir)
 }
 
 fn ledger_steps(migrations: &[Migration]) -> Vec<(String, Frames)> {
@@ -469,7 +470,7 @@ const LEDGER: &str = "SELECT \"version\", \"statement\" FROM \"fp_schema_migrati
 
 #[test]
 fn migrations_apply_once_and_skip_recorded_statements() {
-    let migrations = core();
+    let migrations = core().expect("migrations parse");
     let mut first: Vec<(String, Frames)> = vec![(
         LEDGER.to_owned(),
         Frames::new()
