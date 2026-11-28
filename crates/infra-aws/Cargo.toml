@@ -12,6 +12,9 @@ repository.workspace = true
 # webpki roots) for HTTPS, sha2 for SigV4, serde_json for the DynamoDB JSON protocol.
 [dependencies]
 cms-readmodel = { path = "../cms-readmodel" }
+# The sessions and limits tables implement the cms-session ports (issue #8).
+cms-session = { workspace = true }
+cms-users = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }

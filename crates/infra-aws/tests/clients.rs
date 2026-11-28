@@ -506,3 +506,129 @@ fn unreachable_endpoints_are_transport_errors() {
     ));
     assert_eq!(client().region(), "us-west-2");
 }
+
+// Sessions are stored by token digest and removed through the user_id index, page by page.
+#[test]
+fn sessions_table_puts_gets_deletes_and_deletes_by_user() {
+    use cms_session::{Session, SessionStore, TokenDigest};
+    use cms_users::UserId;
+    let digest = TokenDigest::parse(&"ab".repeat(32)).unwrap();
+    let session = Session {
+        digest: digest.clone(),
+        user: UserId::new(7).unwrap(),
+        created: 100,
+        expires: 200,
+        agent: "ua".to_owned(),
+    };
+    let stored = json!({ "pk": { "S": digest.as_str() }, "user_id": { "N": "7" },
+        "created": { "N": "100" }, "expires": { "N": "200" }, "agent": { "S": "ua" } });
+    let (endpoint, server) = fake(vec![
+        (200, "{}".to_owned()),
+        (200, json!({ "Item": stored }).to_string()),
+        (200, "{}".to_owned()),
+        (200, json!({ "Item": { "pk": { "S": "bad" } } }).to_string()),
+        (200, "{}".to_owned()),
+        (
+            200,
+            json!({ "Items": [{ "pk": { "S": "d1" }, "user_id": { "N": "7" } }],
+                    "LastEvaluatedKey": { "pk": { "S": "d1" }, "user_id": { "N": "7" } } })
+            .to_string(),
+        ),
+        (200, "{}".to_owned()),
+        (
+            200,
+            json!({ "Items": [{ "pk": { "S": "d2" }, "user_id": { "N": "7" } }] }).to_string(),
+        ),
+        (200, "{}".to_owned()),
+        (500, r#"{"__type":"x#InternalServerError"}"#.to_owned()),
+    ]);
+    let mut table = infra_aws::SessionsTable::new(DynamoDb::new(client(), endpoint), "fp-sessions");
+    assert_eq!(table.put(&session), Ok(()));
+    assert_eq!(table.get(&digest), Ok(Some(session.clone())));
+    assert_eq!(table.get(&digest), Ok(None));
+    // A stored item that does not decode is an outage, never "no session".
+    assert_eq!(table.get(&digest), Err(cms_session::Error::Unavailable));
+    assert_eq!(table.delete(&digest), Ok(()));
+    assert_eq!(table.delete_all_for_user(session.user), Ok(2));
+    assert_eq!(table.put(&session), Err(cms_session::Error::Unavailable));
+    let seen = finish(server);
+    assert_eq!(seen.len(), 10);
+    assert_eq!(
+        seen[0].json(),
+        json!({ "TableName": "fp-sessions", "Item": stored })
+    );
+    assert_eq!(seen[1].header("x-amz-target"), "DynamoDB_20120810.GetItem");
+    assert_eq!(seen[4].header("x-amz-target"), "DynamoDB_20120810.DeleteItem");
+    assert_eq!(
+        seen[5].json(),
+        json!({ "TableName": "fp-sessions", "IndexName": "user_id",
+                "KeyConditionExpression": "#k = :v",
+                "ExpressionAttributeNames": { "#k": "user_id" },
+                "ExpressionAttributeValues": { ":v": { "N": "7" } } })
+    );
+    assert_eq!(
+        seen[6].json(),
+        json!({ "TableName": "fp-sessions", "Key": { "pk": { "S": "d1" } } })
+    );
+    assert_eq!(
+        seen[7].json().get("ExclusiveStartKey"),
+        Some(&json!({ "pk": { "S": "d1" }, "user_id": { "N": "7" } }))
+    );
+    assert_signed(&seen[5], "dynamodb", "us-west-2", PathStyle::Standard);
+}
+
+// Rate counters are one atomic UpdateItem each; the TTL is set by the first increment only.
+#[test]
+fn limits_table_increments_atomically() {
+    use cms_session::{RateKey, RateLimiter};
+    let (endpoint, server) = fake(vec![
+        (
+            200,
+            json!({ "Attributes": { "count": { "N": "3" }, "expires": { "N": "600" } } })
+                .to_string(),
+        ),
+        (200, "{}".to_owned()),
+    ]);
+    let mut limits = infra_aws::LimitsTable::new(DynamoDb::new(client(), endpoint), "fp-limits");
+    let key = RateKey {
+        name: "RL#login-ip#192.0.2.1#5".to_owned(),
+        expires: 600,
+    };
+    assert_eq!(limits.increment(&key), Ok(3));
+    assert_eq!(limits.increment(&key), Err(cms_session::Error::Unavailable));
+    let seen = finish(server);
+    assert_eq!(seen[0].header("x-amz-target"), "DynamoDB_20120810.UpdateItem");
+    assert_eq!(
+        seen[0].json(),
+        json!({ "TableName": "fp-limits",
+                "Key": { "pk": { "S": "RL#login-ip#192.0.2.1#5" } },
+                "UpdateExpression": "ADD #c :one SET #e = if_not_exists(#e, :exp)",
+                "ExpressionAttributeNames": { "#c": "count", "#e": "expires" },
+                "ExpressionAttributeValues": { ":one": { "N": "1" }, ":exp": { "N": "600" } },
+                "ReturnValues": "UPDATED_NEW" })
+    );
+}
+
+// The site secret is read once with a signed JSON 1.1 call; only SecretString is accepted.
+#[test]
+fn secrets_are_read_as_strings() {
+    let (endpoint, server) = fake(vec![
+        (200, json!({ "SecretString": "s3cr3t" }).to_string()),
+        (200, json!({ "SecretBinary": "AA==" }).to_string()),
+    ]);
+    let secrets = infra_aws::SecretsManager::new(client(), endpoint);
+    assert_eq!(secrets.get_secret_string("arn:x"), Ok("s3cr3t".to_owned()));
+    assert!(matches!(
+        secrets.get_secret_string("arn:x"),
+        Err(AwsError::Malformed { .. })
+    ));
+    let seen = finish(server);
+    assert_eq!(seen[0].header("x-amz-target"), "secretsmanager.GetSecretValue");
+    assert_eq!(seen[0].header("content-type"), "application/x-amz-json-1.1");
+    assert_eq!(seen[0].json(), json!({ "SecretId": "arn:x" }));
+    assert_signed(&seen[0], "secretsmanager", "us-west-2", PathStyle::Standard);
+    assert_eq!(
+        infra_aws::SecretsManager::regional_endpoint("us-west-2").host(),
+        "secretsmanager.us-west-2.amazonaws.com"
+    );
+}

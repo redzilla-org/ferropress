@@ -10,6 +10,8 @@
 //!   local emulators point it at `127.0.0.1`.
 //! - [`ReadTable`]: the read-model table as a [`cms_readmodel::RouteTable`] plus the projector's
 //!   version-gated writers; [`S3`] is the [`cms_readmodel::Blobs`] adapter.
+//! - [`SessionsTable`] and [`LimitsTable`]: the `cms-session` ports for the auth Lambda;
+//!   [`SecretsManager`] reads the site secret at init.
 //!
 //! # Examples
 //!
@@ -36,6 +38,8 @@ mod dynamodb;
 mod http;
 mod readmodel;
 mod s3;
+mod secrets;
+mod sessions;
 pub mod sigv4;
 mod time;
 
@@ -46,4 +50,6 @@ pub use dynamodb::{DynamoDb, Item, Page, Write};
 pub use http::{AwsClient, AwsError, Endpoint};
 pub use readmodel::{ReadTable, decode_route, encode_route, route_pk, term_pk};
 pub use s3::{Addressing, S3};
+pub use secrets::SecretsManager;
+pub use sessions::{LimitsTable, SessionsTable, USER_INDEX};
 pub use time::AmzDate;
