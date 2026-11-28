@@ -1,0 +1,24 @@
+[package]
+name = "cms-projector"
+description = "Projector job: drains the outbox into rendered objects, route items and one invalidation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cms-db = { workspace = true }
+cms-outbox = { workspace = true }
+cms-readmodel = { path = "../cms-readmodel" }
+cms-render = { path = "../cms-render" }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+cms-db = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

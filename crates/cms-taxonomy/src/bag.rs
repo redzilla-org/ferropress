@@ -70,7 +70,13 @@ impl<S: Store> Terms<S> {
         {
             return Ok(Found::One(term.clone()));
         }
-        match self.query(&select_rows(&self.term_table, &self.taxonomy_table, id))? {
+        let sql = select_rows(
+            self.store.dialect(),
+            &self.term_table,
+            &self.taxonomy_table,
+            id,
+        )?;
+        match self.query(&sql)? {
             RowsOrFailed::Rows(set) => Ok(self.pick(id, taxonomy, from_set(&set))),
             RowsOrFailed::Failed => Ok(Found::Miss),
         }
@@ -82,14 +88,16 @@ impl<S: Store> Terms<S> {
     ///
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn insert(&mut self, draft: &Draft) -> Result<Write, Error> {
-        let term_id = match self.exec(&insert_term(&self.term_table, draft))? {
+        let dialect = self.store.dialect();
+        let term_id = match self.exec(&insert_term(dialect, &self.term_table, draft)?)? {
             Reply::Done { insert_id, .. } => match TermId::new(insert_id) {
                 Ok(id) => id,
                 Err(_) => return Ok(Write::Unchanged),
             },
             _ => return Ok(Write::Unchanged),
         };
-        match self.exec(&insert_taxonomy(&self.taxonomy_table, term_id, draft))? {
+        let sql = insert_taxonomy(dialect, &self.taxonomy_table, term_id, draft)?;
+        match self.exec(&sql)? {
             Reply::Done { insert_id, .. } => match TermTaxonomyId::new(insert_id) {
                 Ok(taxonomy_id) => Ok(Write::Inserted {
                     term_id,
@@ -112,14 +120,13 @@ impl<S: Store> Terms<S> {
         taxonomy_id: TermTaxonomyId,
         draft: &Draft,
     ) -> Result<Write, Error> {
-        let terms = self.exec(&update_term(&self.term_table, id, draft))?;
+        let dialect = self.store.dialect();
+        // Build both statements first so a refused literal writes nothing.
+        let term_sql = update_term(dialect, &self.term_table, id, draft)?;
+        let taxonomy_sql = update_taxonomy(dialect, &self.taxonomy_table, id, taxonomy_id, draft)?;
+        let terms = self.exec(&term_sql)?;
         self.hits.remove(&id);
-        let taxonomy = self.exec(&update_taxonomy(
-            &self.taxonomy_table,
-            id,
-            taxonomy_id,
-            draft,
-        ))?;
+        let taxonomy = self.exec(&taxonomy_sql)?;
         if affected(&terms) > 0 || affected(&taxonomy) > 0 {
             Ok(Write::Replaced)
         } else {
@@ -133,14 +140,15 @@ impl<S: Store> Terms<S> {
     ///
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn delete(&mut self, id: TermId, taxonomy_id: TermTaxonomyId) -> Result<Write, Error> {
-        let taxonomy = self.exec(&delete_taxonomy(&self.taxonomy_table, taxonomy_id))?;
+        let dialect = self.store.dialect();
+        let taxonomy = self.exec(&delete_taxonomy(dialect, &self.taxonomy_table, taxonomy_id)?)?;
         self.hits.remove(&id);
-        let leftover = match self.query(&count_taxonomies(&self.taxonomy_table, id))? {
+        let leftover = match self.query(&count_taxonomies(dialect, &self.taxonomy_table, id)?)? {
             RowsOrFailed::Rows(set) => leftover_count(&set),
             RowsOrFailed::Failed => 0,
         };
         let terms = if leftover == 0 {
-            affected(&self.exec(&delete_term(&self.term_table, id))?)
+            affected(&self.exec(&delete_term(dialect, &self.term_table, id)?)?)
         } else {
             0
         };
@@ -157,7 +165,8 @@ impl<S: Store> Terms<S> {
     ///
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn linked(&mut self, object: ObjectId, taxonomy_id: TermTaxonomyId) -> Result<bool, Error> {
-        match self.query(&select_link(&self.link_table, object, taxonomy_id))? {
+        let sql = select_link(self.store.dialect(), &self.link_table, object, taxonomy_id)?;
+        match self.query(&sql)? {
             RowsOrFailed::Rows(set) => Ok(first_taxonomy_id(&set).is_some()),
             RowsOrFailed::Failed => Ok(false),
         }
@@ -169,7 +178,8 @@ impl<S: Store> Terms<S> {
     ///
     /// [`Error::Unavailable`] when the store cannot talk to a server.
     pub fn objects(&mut self, taxonomy_id: TermTaxonomyId) -> Result<Vec<ObjectId>, Error> {
-        match self.query(&select_objects(&self.link_table, taxonomy_id))? {
+        let sql = select_objects(self.store.dialect(), &self.link_table, taxonomy_id)?;
+        match self.query(&sql)? {
             RowsOrFailed::Rows(set) => Ok(object_ids(&set)),
             RowsOrFailed::Failed => Ok(Vec::new()),
         }
@@ -184,7 +194,8 @@ impl<S: Store> Terms<S> {
         if self.linked(object, taxonomy_id)? {
             return Ok(Link::Unchanged);
         }
-        if affected(&self.exec(&insert_link(&self.link_table, object, taxonomy_id))?) > 0 {
+        let sql = insert_link(self.store.dialect(), &self.link_table, object, taxonomy_id)?;
+        if affected(&self.exec(&sql)?) > 0 {
             Ok(Link::Attached)
         } else {
             Ok(Link::Unchanged)
@@ -204,7 +215,8 @@ impl<S: Store> Terms<S> {
         if taxonomy_ids.is_empty() {
             return Ok(Link::Unchanged);
         }
-        if affected(&self.exec(&delete_links(&self.link_table, object, taxonomy_ids))?) > 0 {
+        let sql = delete_links(self.store.dialect(), &self.link_table, object, taxonomy_ids)?;
+        if affected(&self.exec(&sql)?) > 0 {
             Ok(Link::Detached)
         } else {
             Ok(Link::Unchanged)

@@ -19,7 +19,6 @@ mod autoload;
 mod bag;
 mod error;
 mod name;
-mod quote;
 mod sql;
 mod write;
 

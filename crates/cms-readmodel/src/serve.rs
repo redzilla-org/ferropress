@@ -44,6 +44,16 @@ pub trait Blobs {
     ///
     /// [`PortError`] when the store cannot be reached.
     fn get(&mut self, key: &BlobKey) -> Result<Option<Vec<u8>>, PortError>;
+
+    /// The bytes of a page shell. Shell keys are content hashes, so an adapter may keep them in
+    /// memory across warm invocations; the default fetches like [`Blobs::get`].
+    ///
+    /// # Errors
+    ///
+    /// [`PortError`] when the store cannot be reached.
+    fn shell(&mut self, key: &BlobKey) -> Result<Option<Vec<u8>>, PortError> {
+        self.get(key)
+    }
 }
 
 /// A storage port failed, or the read model is inconsistent.
@@ -160,7 +170,12 @@ fn respond<B: Blobs>(
             return Ok(response);
         }
         Content::Object { body } => fetch(blobs, body)?,
-        Content::Page { shell, body } => page(&fetch(blobs, shell)?, shell, &fetch(blobs, body)?)?,
+        Content::Page { shell, body } => {
+            let shell_bytes = blobs
+                .shell(shell)?
+                .ok_or_else(|| PortError::MissingBlob(shell.as_str().into()))?;
+            page(&shell_bytes, shell, &fetch(blobs, body)?)?
+        }
     };
     let mut response = Response::bare(route.status, CACHEABLE);
     response.headers.extend([
