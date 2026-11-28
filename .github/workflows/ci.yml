@@ -81,6 +81,28 @@ jobs:
         with:
           command: check advisories licenses bans sources
 
+  # The CDK app synthesizes only; it uses the committed asset fixture, so no Rust build or
+  # AWS credentials are needed.
+  cdk:
+    name: cdk tests and synth
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/aws/cdk
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: deploy/aws/cdk/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Test
+        run: npm test
+      - name: Synth
+        run: npx cdk synth -c assetDir=test/fixtures/lambda --quiet
+
   no-php-runtime:
     name: forbidden PHP runtime scan
     runs-on: ubuntu-latest

@@ -22,4 +22,7 @@ mod serve;
 
 pub use path::{BasePath, PathError, Resolved, RouteKey};
 pub use route::{BlobKey, Content, Route};
-pub use serve::{BODY_MARK, Blobs, Method, PortError, Request, Response, RouteTable, serve};
+pub use serve::{
+    BODY_MARK, Blobs, HEAD_END, HEAD_MARK, Method, MissingMark, PortError, Request, Response,
+    RouteTable, assemble, serve,
+};
